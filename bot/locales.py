@@ -139,10 +139,10 @@ TEXTS = {
         "ru": "Выберите проект:",
     },
     "choose_dates_dayoff": {
-        "uk": "Оберіть дати вихідних (ліміт: {limit} дн.). Минулі дати недоступні.",
-        "pl": "Wybierz daty (limit: {limit} dni). Przeszłe daty są niedostępne.",
-        "en": "Select dates (limit: {limit} days). Past dates are disabled.",
-        "ru": "Выберите даты (лимит: {limit} дн.). Прошедшие даты недоступны.",
+        "uk": "Оберіть дати вихідних. Місячний ліміт проєкту: {limit} дн./міс. Минулі дати недоступні.",
+        "pl": "Wybierz daty. Miesięczny limit projektu: {limit} dni/mies. Przeszłe daty są niedostępne.",
+        "en": "Select dates. Project's monthly limit: {limit} days/month. Past dates are disabled.",
+        "ru": "Выберите даты. Месячный лимит проекта: {limit} дн./мес. Прошедшие даты недоступны.",
     },
     "choose_dates_l4": {
         "uk": "Оберіть дати лікарняного (максимум {limit} дн.).",
@@ -161,6 +161,12 @@ TEXTS = {
         "pl": "Wybierz przynajmniej jedną datę.",
         "en": "Select at least one date.",
         "ru": "Выберите хотя бы одну дату.",
+    },
+    "monthly_limit_exceeded": {
+        "uk": "⚠️ Місячний ліміт вихідних для цього проєкту — {limit} дн. У {month} вже використано {used} дн.",
+        "pl": "⚠️ Miesięczny limit dni wolnych dla tego projektu to {limit} dni. W {month} wykorzystano już {used} dni.",
+        "en": "⚠️ The monthly day-off limit for this project is {limit} days. {used} days already used in {month}.",
+        "ru": "⚠️ Месячный лимит выходных для этого проекта — {limit} дн. В {month} уже использовано {used} дн.",
     },
     "confirm_request": {
         "uk": "Перевірте деталі зголошення:\n\nТип: {type}\nПроєкт: {project} ({region})\nДати: {start} — {end}\nКількість днів: {count}",

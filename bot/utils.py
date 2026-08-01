@@ -6,7 +6,7 @@ from django.core.exceptions import ValidationError
 from django.core.validators import validate_email as django_validate_email
 from django.utils import timezone
 
-from core.models import AbsenceRequest, Project, Region, RequestStatus
+from core.models import AbsenceRequest, Project, Region, RequestStatus, RequestType
 from users.models import User, latin_name_validator
 
 
@@ -125,7 +125,38 @@ def create_absence_request(user_id: int, project_id: int, request_type: str, dat
         start_date=start,
         end_date=end,
         days_count=len(dates_sorted),
+        dates=dates_sorted,
     )
+
+
+@sync_to_async
+def get_used_dayoff_days_in_month(
+    user_id: int, project_id: int, year: int, month: int, exclude_request_id: int | None = None,
+) -> int:
+    """
+    The total number of days off taken by the employee for the project in the specified
+    calendar month—across all their "Day Off" requests, excluding rejected ones.
+    """
+    qs = (
+        AbsenceRequest.objects
+        .filter(user_id=user_id, project_id=project_id, request_type=RequestType.DAYOFF)
+        .exclude(status=RequestStatus.REJECTED)
+    )
+    if exclude_request_id:
+        qs = qs.exclude(id=exclude_request_id)
+
+    prefix = f"{year:04d}-{month:02d}"
+    total = 0
+    for req in qs.only("dates", "start_date", "end_date", "days_count"):
+        dates = req.dates or []
+        if dates:
+            total += sum(1 for iso in dates if iso.startswith(prefix))
+        elif (
+            req.start_date.year == year and req.start_date.month == month
+            and req.end_date.year == year and req.end_date.month == month
+        ):
+            total += req.days_count
+    return total
 
 
 @sync_to_async

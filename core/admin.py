@@ -39,8 +39,8 @@ class AbsenceRequestAdmin(admin.ModelAdmin):
     list_filter = ("status", "request_type", "project__region", "project")
     search_fields = ("user__first_name", "user__last_name", "user__email")
     date_hierarchy = "created_at"
-    readonly_fields = ("created_at", "notified_coordinator_message_ids")
-
+    readonly_fields = ("created_at", "notified_coordinator_message_ids", "dates")
+    
     def save_model(self, request, obj, form, change):
         old_status = None
         if change:

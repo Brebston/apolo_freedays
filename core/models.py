@@ -20,8 +20,12 @@ class Project(models.Model):
         Region, on_delete=models.CASCADE, related_name="projects", verbose_name="Region",
     )
     dayoff_limit = models.PositiveIntegerField(
-        default=5, verbose_name="Limit on days off",
-        help_text="The maximum number of days off that can be selected in a single request.",
+        default=5, verbose_name="Monthly limit of days off",
+        help_text=(
+            "The maximum total number of days off an employee can take for this "
+            "project in a single calendar month (taking into account all their "
+            "requests for that month, excluding rejected ones)."
+        ),
     )
     coordinators = models.ManyToManyField(
         settings.AUTH_USER_MODEL,
@@ -98,6 +102,7 @@ class AbsenceRequest(models.Model):
 
     # {coordinator's telegram_id: message_id of the sent push notification}
     notified_coordinator_message_ids = models.JSONField(default=dict, blank=True)
+    dates = models.JSONField(default=list, blank=True, verbose_name="Selected dates (ISO)")
 
     class Meta:
         verbose_name = "Reporting"

@@ -23,9 +23,11 @@ from bot.utils import (
     get_project_coordinators,
     get_regions,
     get_projects_by_region,
+    get_used_dayoff_days_in_month,
     get_user_by_telegram_id,
     save_notification_message_id,
 )
+
 from core.tasks import send_absence_request_email
 
 router = Router()
@@ -39,7 +41,7 @@ async def new_request_start(message: Message, state: FSMContext):
     if not user:
         return
     await state.clear()
-    await state.update_data(language=user.language)
+    await state.update_data(language=user.language, user_id=user.id)
     await state.set_state(RequestStates.choosing_type)
     await message.answer(t("choose_request_type", user.language), reply_markup=request_type_keyboard(user.language))
 
@@ -131,14 +133,38 @@ async def calendar_action(callback: CallbackQuery, state: FSMContext):
         return
 
     if action == "day":
+        request_type = data["request_type"]
         limit = data.get("limit")
+
         if payload in selected:
             selected.discard(payload)
         else:
-            if len(selected) >= limit:
-                await callback.answer(t("limit_exceeded", lang, limit=limit), show_alert=True)
-                return
+            d = date.fromisoformat(payload)
+
+            if request_type == "l4":
+                if len(selected) >= limit:
+                    await callback.answer(t("limit_exceeded", lang, limit=limit), show_alert=True)
+                    return
+            else:
+                already_in_month = sum(
+                    1 for iso in selected if iso.startswith(f"{d.year:04d}-{d.month:02d}")
+                )
+                used_in_month = await get_used_dayoff_days_in_month(
+                    data["user_id"], data["project_id"], d.year, d.month,
+                )
+                if used_in_month + already_in_month + 1 > limit:
+                    month_label = f"{d.month:02d}.{d.year:04d}"
+                    await callback.answer(
+                        t(
+                            "monthly_limit_exceeded", lang,
+                            limit=limit, used=used_in_month, month=month_label,
+                        ),
+                        show_alert=True,
+                    )
+                    return
+
             selected.add(payload)
+
         await state.update_data(selected_dates=sorted(selected))
         await callback.message.edit_reply_markup(reply_markup=build_calendar(year, month, selected))
         await callback.answer()
