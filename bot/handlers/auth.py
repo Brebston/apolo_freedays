@@ -17,8 +17,9 @@ router = Router()
 
 
 # ---------------------------------------------------------------------------
-# Реєстрація
+# Registration
 # ---------------------------------------------------------------------------
+
 
 @router.callback_query(F.data == "auth:register")
 async def start_registration(callback: CallbackQuery, state: FSMContext):
@@ -97,19 +98,22 @@ async def reg_password(message: Message, state: FSMContext):
         language=lang,
     )
 
-    # Безпека UI: видаляємо повідомлення з паролем (п.4.1, п.6 ТЗ)
+    # UI Security: Removing the Password from the Message
     try:
         await message.delete()
     except Exception:
         pass
 
     await state.clear()
-    await message.answer(t("reg_success", lang), reply_markup=main_menu_keyboard(lang, user.is_staff))
+    await message.answer(
+        t("reg_success", lang), reply_markup=main_menu_keyboard(lang, user.is_staff)
+    )
 
 
 # ---------------------------------------------------------------------------
-# Вхід
+# Login
 # ---------------------------------------------------------------------------
+
 
 @router.callback_query(F.data == "auth:login")
 async def start_login(callback: CallbackQuery, state: FSMContext):
@@ -135,10 +139,12 @@ async def login_password(message: Message, state: FSMContext):
     lang = data.get("language", "uk")
 
     user = await link_telegram_and_check_password(
-        data["login_email"], message.text or "", message.from_user.id,
+        data["login_email"],
+        message.text or "",
+        message.from_user.id,
     )
 
-    # Безпека UI: видаляємо повідомлення з паролем
+    # UI Security: Removing the Password from the Message
     try:
         await message.delete()
     except Exception:
@@ -150,5 +156,6 @@ async def login_password(message: Message, state: FSMContext):
 
     await state.clear()
     await message.answer(
-        t("login_success", user.language), reply_markup=main_menu_keyboard(user.language, user.is_staff),
+        t("login_success", user.language),
+        reply_markup=main_menu_keyboard(user.language, user.is_staff),
     )

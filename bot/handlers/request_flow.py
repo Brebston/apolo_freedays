@@ -19,12 +19,14 @@ from bot.locales import t
 from bot.states import RequestStates
 from bot.utils import (
     create_absence_request,
+    get_date_capacity_limit,
     get_project,
     get_project_coordinators,
     get_regions,
     get_projects_by_region,
     get_used_dayoff_days_in_month,
     get_user_by_telegram_id,
+    get_workers_count_on_date,
     save_notification_message_id,
 )
 
@@ -43,7 +45,10 @@ async def new_request_start(message: Message, state: FSMContext):
     await state.clear()
     await state.update_data(language=user.language, user_id=user.id)
     await state.set_state(RequestStates.choosing_type)
-    await message.answer(t("choose_request_type", user.language), reply_markup=request_type_keyboard(user.language))
+    await message.answer(
+        t("choose_request_type", user.language),
+        reply_markup=request_type_keyboard(user.language),
+    )
 
 
 @router.callback_query(RequestStates.choosing_type, F.data.startswith("reqtype:"))
@@ -64,7 +69,9 @@ async def choose_type(callback: CallbackQuery, state: FSMContext):
 
     await state.update_data(request_type=action)
     await state.set_state(RequestStates.choosing_region)
-    await callback.message.edit_text(t("choose_region", lang), reply_markup=regions_keyboard(regions))
+    await callback.message.edit_text(
+        t("choose_region", lang), reply_markup=regions_keyboard(regions)
+    )
     await callback.answer()
 
 
@@ -81,7 +88,9 @@ async def choose_region(callback: CallbackQuery, state: FSMContext):
 
     await state.update_data(region_id=region_id)
     await state.set_state(RequestStates.choosing_project)
-    await callback.message.edit_text(t("choose_project", lang), reply_markup=projects_keyboard(projects))
+    await callback.message.edit_text(
+        t("choose_project", lang), reply_markup=projects_keyboard(projects)
+    )
     await callback.answer()
 
 
@@ -93,18 +102,26 @@ async def choose_project(callback: CallbackQuery, state: FSMContext):
     project = await get_project(project_id)
     request_type = data["request_type"]
 
-    # Ліміти: для L4 — 31 день, для вихідних — ліміт проєкту з Django Admin
+    # Limits: 31 days for L4; for weekends — the project's monthly limit from Django Admin.
     limit = L4_MAX_DAYS if request_type == "l4" else project.dayoff_limit
+    # Employee limit per date (weekends only; None = no limits)
+    capacity_limit = None if request_type == "l4" else project.max_workers_per_day
 
     today = date.today()
     await state.update_data(
-        project_id=project_id, limit=limit, selected_dates=[], year=today.year, month=today.month,
+        project_id=project_id,
+        limit=limit,
+        capacity_limit=capacity_limit,
+        selected_dates=[],
+        year=today.year,
+        month=today.month,
     )
     await state.set_state(RequestStates.choosing_dates)
 
     key = "choose_dates_l4" if request_type == "l4" else "choose_dates_dayoff"
     await callback.message.edit_text(
-        t(key, lang, limit=limit), reply_markup=build_calendar(today.year, today.month, set()),
+        t(key, lang, limit=limit),
+        reply_markup=build_calendar(today.year, today.month, set(), lang),
     )
     await callback.answer()
 
@@ -128,7 +145,9 @@ async def calendar_action(callback: CallbackQuery, state: FSMContext):
     if action in ("prev", "next"):
         year, month = map(int, payload.split("-"))
         await state.update_data(year=year, month=month)
-        await callback.message.edit_reply_markup(reply_markup=build_calendar(year, month, selected))
+        await callback.message.edit_reply_markup(
+            reply_markup=build_calendar(year, month, selected, lang)
+        )
         await callback.answer()
         return
 
@@ -143,30 +162,74 @@ async def calendar_action(callback: CallbackQuery, state: FSMContext):
 
             if request_type == "l4":
                 if len(selected) >= limit:
-                    await callback.answer(t("limit_exceeded", lang, limit=limit), show_alert=True)
+                    await callback.answer(
+                        t("limit_exceeded", lang, limit=limit), show_alert=True
+                    )
                     return
             else:
                 already_in_month = sum(
-                    1 for iso in selected if iso.startswith(f"{d.year:04d}-{d.month:02d}")
+                    1
+                    for iso in selected
+                    if iso.startswith(f"{d.year:04d}-{d.month:02d}")
                 )
                 used_in_month = await get_used_dayoff_days_in_month(
-                    data["user_id"], data["project_id"], d.year, d.month,
+                    data["user_id"],
+                    data["project_id"],
+                    d.year,
+                    d.month,
                 )
                 if used_in_month + already_in_month + 1 > limit:
                     month_label = f"{d.month:02d}.{d.year:04d}"
                     await callback.answer(
                         t(
-                            "monthly_limit_exceeded", lang,
-                            limit=limit, used=used_in_month, month=month_label,
+                            "monthly_limit_exceeded",
+                            lang,
+                            limit=limit,
+                            used=used_in_month,
+                            month=month_label,
                         ),
                         show_alert=True,
                     )
                     return
 
+                # Limit on the number of employees who can be absent
+                # simultaneously on a single day (Project.max_workers_per_day).
+                # Limit on the number of employees who can be absent
+                # simultaneously on a single day (Project.max_workers_per_day).
+                # Limit on the number of employees for a specific date: first, we check
+                # if there is an override (ProjectDateLimit) for this specific date
+                # in the Django Admin; otherwise, the general project limit applies.
+
+                date_override = await get_date_capacity_limit(
+                    data["project_id"], payload
+                )
+                effective_capacity = (
+                    date_override
+                    if date_override is not None
+                    else data.get("capacity_limit")
+                )
+                if effective_capacity is not None:
+                    workers_count = await get_workers_count_on_date(
+                        data["project_id"], payload
+                    )
+                    if workers_count >= effective_capacity:
+                        await callback.answer(
+                            t(
+                                "date_capacity_full",
+                                lang,
+                                date=payload,
+                                limit=effective_capacity,
+                            ),
+                            show_alert=True,
+                        )
+                        return
+
             selected.add(payload)
 
         await state.update_data(selected_dates=sorted(selected))
-        await callback.message.edit_reply_markup(reply_markup=build_calendar(year, month, selected))
+        await callback.message.edit_reply_markup(
+            reply_markup=build_calendar(year, month, selected, lang)
+        )
         await callback.answer()
         return
 
@@ -177,13 +240,20 @@ async def calendar_action(callback: CallbackQuery, state: FSMContext):
 
         project = await get_project(data["project_id"])
         request_type = data["request_type"]
-        type_label = t("btn_l4", lang) if request_type == "l4" else t("btn_dayoff", lang)
+        type_label = (
+            t("btn_l4", lang) if request_type == "l4" else t("btn_dayoff", lang)
+        )
         dates_sorted = sorted(selected)
 
         text = t(
-            "confirm_request", lang,
-            type=type_label, project=project.name, region=project.region.name,
-            start=dates_sorted[0], end=dates_sorted[-1], count=len(dates_sorted),
+            "confirm_request",
+            lang,
+            type=type_label,
+            project=project.name,
+            region=project.region.name,
+            start=dates_sorted[0],
+            end=dates_sorted[-1],
+            count=len(dates_sorted),
         )
         await state.set_state(RequestStates.confirming)
         await callback.message.edit_text(text, reply_markup=confirm_keyboard(lang))
@@ -210,13 +280,15 @@ async def confirm_request(callback: CallbackQuery, state: FSMContext):
     )
     await state.clear()
     await callback.message.edit_text(t("request_created", lang))
-    await callback.message.answer(t("main_menu_title", lang), reply_markup=main_menu_keyboard(lang, user.is_staff))
+    await callback.message.answer(
+        t("main_menu_title", lang), reply_markup=main_menu_keyboard(lang, user.is_staff)
+    )
     await callback.answer()
 
-    # Асинхронна email-розсилка (Celery)
+    # Asynchronous email dispatch (Celery)
     send_absence_request_email.delay(req.id)
 
-    # Push-сповіщення координаторам проєкту з кнопками швидкої дії
+    # Push notifications to project coordinators with quick-action buttons
     project = await get_project(data["project_id"])
     coordinators = await get_project_coordinators(data["project_id"])
     can_reject = data["request_type"] != "l4"
@@ -225,20 +297,31 @@ async def confirm_request(callback: CallbackQuery, state: FSMContext):
     for coordinator in coordinators:
         c_lang = coordinator.language
         text = t(
-            "coordinator_new_request_notification", c_lang,
+            "coordinator_new_request_notification",
+            c_lang,
             name=f"{user.last_name} {user.first_name}",
             link=profile_link,
-            project=project.name, region=project.region.name,
-            type=t("btn_l4", c_lang) if req.request_type == "l4" else t("btn_dayoff", c_lang),
-            start=req.start_date, end=req.end_date,
+            project=project.name,
+            region=project.region.name,
+            type=(
+                t("btn_l4", c_lang)
+                if req.request_type == "l4"
+                else t("btn_dayoff", c_lang)
+            ),
+            start=req.start_date,
+            end=req.end_date,
         )
         try:
             sent = await bot.send_message(
-                coordinator.telegram_id, text, reply_markup=decision_keyboard(req.id, c_lang, can_reject),
+                coordinator.telegram_id,
+                text,
+                reply_markup=decision_keyboard(req.id, c_lang, can_reject),
             )
-            await save_notification_message_id(req.id, coordinator.telegram_id, sent.message_id)
+            await save_notification_message_id(
+                req.id, coordinator.telegram_id, sent.message_id
+            )
         except Exception:
-            # Координатор міг заблокувати бота тощо — не переривати обробку.
+            # The coordinator could block the bot, etc., without interrupting processing.
             pass
 
 
@@ -247,6 +330,7 @@ async def _cancel_flow(callback: CallbackQuery, state: FSMContext, lang: str):
     user = await get_user_by_telegram_id(callback.from_user.id)
     await callback.message.edit_text(t("request_cancelled", lang))
     await callback.message.answer(
-        t("main_menu_title", lang), reply_markup=main_menu_keyboard(lang, user.is_staff if user else False),
+        t("main_menu_title", lang),
+        reply_markup=main_menu_keyboard(lang, user.is_staff if user else False),
     )
     await callback.answer()

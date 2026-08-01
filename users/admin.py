@@ -7,8 +7,15 @@ from .models import User
 @admin.register(User)
 class UserAdmin(DjangoUserAdmin):
     list_display = (
-        "id", "last_name", "first_name", "email", "phone",
-        "telegram_id", "language", "is_staff", "is_active",
+        "id",
+        "last_name",
+        "first_name",
+        "email",
+        "phone",
+        "telegram_id",
+        "language",
+        "is_staff",
+        "is_active",
     )
     list_filter = ("is_staff", "is_active", "language")
     search_fields = ("first_name", "last_name", "email", "phone", "telegram_id")
@@ -16,18 +23,48 @@ class UserAdmin(DjangoUserAdmin):
 
     fieldsets = (
         (None, {"fields": ("username", "password")}),
-        ("Особисті дані", {"fields": ("first_name", "last_name", "email", "phone", "language", "telegram_id")}),
-        ("Права доступу (is_staff = координатор)", {
-            "fields": ("is_active", "is_staff", "is_superuser", "groups", "user_permissions"),
-        }),
-        ("Дати", {"fields": ("last_login", "date_joined")}),
+        (
+            "Personal data",
+            {
+                "fields": (
+                    "first_name",
+                    "last_name",
+                    "email",
+                    "phone",
+                    "language",
+                    "telegram_id",
+                )
+            },
+        ),
+        (
+            "Access rights (is_staff = coordinator)",
+            {
+                "fields": (
+                    "is_active",
+                    "is_staff",
+                    "is_superuser",
+                    "groups",
+                    "user_permissions",
+                ),
+            },
+        ),
+        ("Dates", {"fields": ("last_login", "date_joined")}),
     )
     add_fieldsets = (
-        (None, {
-            "classes": ("wide",),
-            "fields": (
-                "username", "first_name", "last_name", "email", "phone",
-                "password1", "password2", "is_staff",
-            ),
-        }),
+        (
+            None,
+            {
+                "classes": ("wide",),
+                "fields": (
+                    "username",
+                    "first_name",
+                    "last_name",
+                    "email",
+                    "phone",
+                    "password1",
+                    "password2",
+                    "is_staff",
+                ),
+            },
+        ),
     )
