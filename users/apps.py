@@ -1,7 +1,7 @@
 from django.apps import AppConfig
 
 
-class CoreConfig(AppConfig):
+class UsersConfig(AppConfig):
     default_auto_field = "django.db.models.BigAutoField"
-    name = "core"
-    verbose_name = "Projects and Submissions"
+    name = "users"
+    verbose_name = "Користувачі"

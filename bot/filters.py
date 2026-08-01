@@ -7,8 +7,8 @@ from bot.utils import get_user_by_telegram_id
 
 class TextIs(BaseFilter):
     """
-    Порівнює текст повідомлення з локалізованою назвою кнопки для мови
-    поточного користувача (мова визначається з БД за telegram_id).
+    Compares the message text with the localized button label for the current
+    user's language (the language is determined from the database based on the telegram_id).
     """
 
     def __init__(self, key: str):

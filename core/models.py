@@ -3,7 +3,7 @@ from django.db import models
 
 
 class Region(models.Model):
-    name = models.CharField(max_length=100, unique=True, verbose_name="Назва регіону")
+    name = models.CharField(max_length=100, unique=True, verbose_name="Region name")
 
     class Meta:
         verbose_name = "Region"
@@ -17,11 +17,29 @@ class Region(models.Model):
 class Project(models.Model):
     name = models.CharField(max_length=150, verbose_name="Project name")
     region = models.ForeignKey(
-        Region, on_delete=models.CASCADE, related_name="projects", verbose_name="Region",
+        Region,
+        on_delete=models.CASCADE,
+        related_name="projects",
+        verbose_name="Region",
     )
     dayoff_limit = models.PositiveIntegerField(
-        default=5, verbose_name="Limit on days off",
-        help_text="The maximum number of days off that can be selected in a single request.",
+        default=5,
+        verbose_name="Monthly limit of days off",
+        help_text=(
+            "The maximum total number of days off an employee can take for this "
+            "project in a single calendar month (taking into account all their "
+            "requests for that month, excluding rejected ones)."
+        ),
+    )
+    max_workers_per_day = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        default=None,
+        verbose_name="Employee limit as of the date (blank) - no restrictions (default).",
+        help_text=(
+            "The maximum number of employees on this project who can be off on the same day. "
+            "Leave blank for no limit (default)."
+        ),
     )
     coordinators = models.ManyToManyField(
         settings.AUTH_USER_MODEL,
@@ -41,6 +59,34 @@ class Project(models.Model):
         return f"{self.name} ({self.region})"
 
 
+class ProjectDateLimit(models.Model):
+    """
+    Redefining the employee limit for a project on a SPECIFIC date.
+    If there is no entry here for the date, the general `Project.max_workers_per_day` applies
+    (and if that is also empty, there are no limits at all for that date).
+    """
+
+    project = models.ForeignKey(
+        Project,
+        on_delete=models.CASCADE,
+        related_name="date_limits",
+        verbose_name="Project",
+    )
+    date = models.DateField(verbose_name="Date")
+    max_workers = models.PositiveIntegerField(
+        verbose_name="Employee limit for this date"
+    )
+
+    class Meta:
+        verbose_name = "Employee limit for this date"
+        verbose_name_plural = "Staffing limits for specific dates"
+        unique_together = ("project", "date")
+        ordering = ["date"]
+
+    def __str__(self):
+        return f"{self.project} — {self.date}: {self.max_workers}"
+
+
 class EmailRecipientType(models.TextChoices):
     TO = "to", "Direct recipient (To)"
     CC = "cc", "Copy (DW/CC)"
@@ -48,12 +94,17 @@ class EmailRecipientType(models.TextChoices):
 
 class ProjectEmailRecipient(models.Model):
     project = models.ForeignKey(
-        Project, on_delete=models.CASCADE, related_name="email_recipients", verbose_name="Project",
+        Project,
+        on_delete=models.CASCADE,
+        related_name="email_recipients",
+        verbose_name="Project",
     )
     email = models.EmailField(verbose_name="Email")
     recipient_type = models.CharField(
-        max_length=2, choices=EmailRecipientType.choices,
-        default=EmailRecipientType.TO, verbose_name="Sending type",
+        max_length=2,
+        choices=EmailRecipientType.choices,
+        default=EmailRecipientType.TO,
+        verbose_name="Sending type",
     )
 
     class Meta:
@@ -77,27 +128,47 @@ class RequestStatus(models.TextChoices):
 
 class AbsenceRequest(models.Model):
     user = models.ForeignKey(
-        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="requests", verbose_name="Worker",
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="requests",
+        verbose_name="Worker",
     )
     project = models.ForeignKey(
-        Project, on_delete=models.CASCADE, related_name="requests", verbose_name="Project",
+        Project,
+        on_delete=models.CASCADE,
+        related_name="requests",
+        verbose_name="Project",
     )
-    request_type = models.CharField(max_length=10, choices=RequestType.choices, verbose_name="Type")
+    request_type = models.CharField(
+        max_length=10, choices=RequestType.choices, verbose_name="Type"
+    )
     start_date = models.DateField(verbose_name="Start date")
     end_date = models.DateField(verbose_name="End date")
     days_count = models.PositiveIntegerField(verbose_name="Number of days")
     status = models.CharField(
-        max_length=10, choices=RequestStatus.choices, default=RequestStatus.PENDING, verbose_name="Status",
+        max_length=10,
+        choices=RequestStatus.choices,
+        default=RequestStatus.PENDING,
+        verbose_name="Status",
     )
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Created")
-    decided_at = models.DateTimeField(null=True, blank=True, verbose_name="Date of decision")
+    decided_at = models.DateTimeField(
+        null=True, blank=True, verbose_name="Date of decision"
+    )
     decided_by = models.ForeignKey(
-        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
-        related_name="decided_requests", verbose_name="Who made the decision?",
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="decided_requests",
+        verbose_name="Who made the decision?",
     )
 
     # {coordinator's telegram_id: message_id of the sent push notification}
     notified_coordinator_message_ids = models.JSONField(default=dict, blank=True)
+    dates = models.JSONField(
+        default=list, blank=True, verbose_name="Selected dates (ISO)"
+    )
 
     class Meta:
         verbose_name = "Reporting"
