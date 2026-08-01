@@ -1,6 +1,7 @@
 from celery import shared_task
 from django.conf import settings
 from django.core.mail import EmailMultiAlternatives
+import requests
 
 
 @shared_task(bind=True, max_retries=3, default_retry_delay=60)
@@ -50,4 +51,31 @@ def send_absence_request_email(self, request_id: int):
         )
         email.send(fail_silently=False)
     except Exception as exc:  # noqa: BLE001
+        raise self.retry(exc=exc)
+
+
+@shared_task(bind=True, max_retries=3, default_retry_delay=30)
+def notify_worker_telegram(self, request_id: int):
+    from core.models import AbsenceRequest, RequestStatus
+    from bot.locales import t
+
+    try:
+        req = AbsenceRequest.objects.select_related("user", "project").get(id=request_id)
+    except AbsenceRequest.DoesNotExist:
+        return
+
+    if req.status == RequestStatus.PENDING or not req.user.telegram_id:
+        return
+
+    text = t(
+        "request_decided_worker", req.user.language,
+        status=t(f"status_{req.status}", req.user.language),
+        start=req.start_date, end=req.end_date,
+        project=req.project.name,
+    )
+    url = f"https://api.telegram.org/bot{settings.BOT_TOKEN}/sendMessage"
+    try:
+        resp = requests.post(url, json={"chat_id": req.user.telegram_id, "text": text}, timeout=10)
+        resp.raise_for_status()
+    except requests.RequestException as exc:
         raise self.retry(exc=exc)

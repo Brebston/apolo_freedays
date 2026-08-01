@@ -1,6 +1,9 @@
 from django.contrib import admin
+from django.utils import timezone
 
-from .models import AbsenceRequest, Project, ProjectEmailRecipient, Region
+from core.models import AbsenceRequest, Project, ProjectEmailRecipient, Region
+from core.tasks import notify_worker_telegram
+from core.models import RequestStatus
 
 
 class ProjectEmailRecipientInline(admin.TabularInline):
@@ -37,3 +40,22 @@ class AbsenceRequestAdmin(admin.ModelAdmin):
     search_fields = ("user__first_name", "user__last_name", "user__email")
     date_hierarchy = "created_at"
     readonly_fields = ("created_at", "notified_coordinator_message_ids")
+
+    def save_model(self, request, obj, form, change):
+        old_status = None
+        if change:
+            old_status = AbsenceRequest.objects.filter(pk=obj.pk).values_list("status", flat=True).first()
+
+        if obj.request_type == "l4" and obj.status == RequestStatus.REJECTED:
+            obj.status = RequestStatus.APPROVED
+
+        super().save_model(request, obj, form, change)
+
+        status_changed = change and old_status == RequestStatus.PENDING and obj.status != RequestStatus.PENDING
+        if status_changed:
+            if not obj.decided_at:
+                obj.decided_at = timezone.now()
+            if not obj.decided_by_id:
+                obj.decided_by = request.user
+            obj.save(update_fields=["decided_at", "decided_by"])
+            notify_worker_telegram.delay(obj.id)

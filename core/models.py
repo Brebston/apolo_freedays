@@ -6,8 +6,8 @@ class Region(models.Model):
     name = models.CharField(max_length=100, unique=True, verbose_name="Назва регіону")
 
     class Meta:
-        verbose_name = "Регіон"
-        verbose_name_plural = "Регіони"
+        verbose_name = "Region"
+        verbose_name_plural = "Regions"
         ordering = ["name"]
 
     def __str__(self):
@@ -15,25 +15,25 @@ class Region(models.Model):
 
 
 class Project(models.Model):
-    name = models.CharField(max_length=150, verbose_name="Назва проєкту")
+    name = models.CharField(max_length=150, verbose_name="Project name")
     region = models.ForeignKey(
-        Region, on_delete=models.CASCADE, related_name="projects", verbose_name="Регіон",
+        Region, on_delete=models.CASCADE, related_name="projects", verbose_name="Region",
     )
     dayoff_limit = models.PositiveIntegerField(
-        default=5, verbose_name="Ліміт днів (вихідні)",
-        help_text="Максимальна кількість вихідних днів, яку можна обрати в одному зголошенні.",
+        default=5, verbose_name="Limit on days off",
+        help_text="The maximum number of days off that can be selected in a single request.",
     )
     coordinators = models.ManyToManyField(
         settings.AUTH_USER_MODEL,
         related_name="coordinated_projects",
         limit_choices_to={"is_staff": True},
         blank=True,
-        verbose_name="Відповідальні координатори",
+        verbose_name="Responsible coordinators",
     )
 
     class Meta:
-        verbose_name = "Проєкт"
-        verbose_name_plural = "Проєкти"
+        verbose_name = "Project"
+        verbose_name_plural = "Projects"
         unique_together = ("name", "region")
         ordering = ["region__name", "name"]
 
@@ -42,70 +42,71 @@ class Project(models.Model):
 
 
 class EmailRecipientType(models.TextChoices):
-    TO = "to", "Прямий отримувач (To)"
-    CC = "cc", "Копія (DW/CC)"
+    TO = "to", "Direct recipient (To)"
+    CC = "cc", "Copy (DW/CC)"
 
 
 class ProjectEmailRecipient(models.Model):
     project = models.ForeignKey(
-        Project, on_delete=models.CASCADE, related_name="email_recipients", verbose_name="Проєкт",
+        Project, on_delete=models.CASCADE, related_name="email_recipients", verbose_name="Project",
     )
     email = models.EmailField(verbose_name="Email")
     recipient_type = models.CharField(
         max_length=2, choices=EmailRecipientType.choices,
-        default=EmailRecipientType.TO, verbose_name="Тип надсилання",
+        default=EmailRecipientType.TO, verbose_name="Sending type",
     )
 
     class Meta:
-        verbose_name = "Email-отримувач проєкту"
-        verbose_name_plural = "Email-отримувачі проєктів"
+        verbose_name = "Project email recipient"
+        verbose_name_plural = "Project email recipients"
 
     def __str__(self):
         return f"{self.email} ({self.get_recipient_type_display()})"
 
 
 class RequestType(models.TextChoices):
-    DAYOFF = "dayoff", "Вихідний день"
-    L4 = "l4", "Лікарняний (L4)"
+    DAYOFF = "dayoff", "Day off"
+    L4 = "l4", "Sick day (L4)"
 
 
 class RequestStatus(models.TextChoices):
-    PENDING = "pending", "Очікує"
-    APPROVED = "approved", "Підтверджено"
-    REJECTED = "rejected", "Відхилено"
+    PENDING = "pending", "Pending"
+    APPROVED = "approved", "Approved"
+    REJECTED = "rejected", "Rejected"
 
 
 class AbsenceRequest(models.Model):
     user = models.ForeignKey(
-        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="requests", verbose_name="Працівник",
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="requests", verbose_name="Worker",
     )
     project = models.ForeignKey(
-        Project, on_delete=models.CASCADE, related_name="requests", verbose_name="Проєкт",
+        Project, on_delete=models.CASCADE, related_name="requests", verbose_name="Project",
     )
-    request_type = models.CharField(max_length=10, choices=RequestType.choices, verbose_name="Тип")
-    start_date = models.DateField(verbose_name="Дата початку")
-    end_date = models.DateField(verbose_name="Дата закінчення")
-    days_count = models.PositiveIntegerField(verbose_name="Кількість днів")
+    request_type = models.CharField(max_length=10, choices=RequestType.choices, verbose_name="Type")
+    start_date = models.DateField(verbose_name="Start date")
+    end_date = models.DateField(verbose_name="End date")
+    days_count = models.PositiveIntegerField(verbose_name="Number of days")
     status = models.CharField(
-        max_length=10, choices=RequestStatus.choices, default=RequestStatus.PENDING, verbose_name="Статус",
+        max_length=10, choices=RequestStatus.choices, default=RequestStatus.PENDING, verbose_name="Status",
     )
-    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Створено")
-    decided_at = models.DateTimeField(null=True, blank=True, verbose_name="Дата рішення")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Created")
+    decided_at = models.DateTimeField(null=True, blank=True, verbose_name="Date of decision")
     decided_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
-        related_name="decided_requests", verbose_name="Хто прийняв рішення",
+        related_name="decided_requests", verbose_name="Who made the decision?",
     )
-    # {telegram_id координатора: message_id надісланого push-повідомлення}
+
+    # {coordinator's telegram_id: message_id of the sent push notification}
     notified_coordinator_message_ids = models.JSONField(default=dict, blank=True)
 
     class Meta:
-        verbose_name = "Зголошення"
-        verbose_name_plural = "Зголошення"
+        verbose_name = "Reporting"
+        verbose_name_plural = "Reporting"
         ordering = ["-created_at"]
 
     def __str__(self):
         return f"{self.user} — {self.get_request_type_display()} ({self.start_date}–{self.end_date})"
 
     def can_be_rejected(self) -> bool:
-        # Для L4 відхилення заблоковане згідно з п.4.4.2 / п.6 ТЗ
+        # Deviation is blocked for L4.
         return self.request_type == RequestType.DAYOFF
