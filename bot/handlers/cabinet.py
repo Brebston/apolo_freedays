@@ -25,13 +25,23 @@ async def my_requests(message: Message):
 
     lines = [t("my_requests_title", user.language), ""]
     for r in requests:
-        type_label = t("btn_l4", user.language) if r.request_type == "l4" else t("btn_dayoff", user.language)
+        type_label = (
+            t("btn_l4", user.language)
+            if r.request_type == "l4"
+            else t("btn_dayoff", user.language)
+        )
         status_label = t(f"status_{r.status}", user.language)
-        lines.append(t(
-            "request_item", user.language,
-            type=type_label, start=r.start_date, end=r.end_date,
-            project=r.project.name, status=status_label,
-        ))
+        lines.append(
+            t(
+                "request_item",
+                user.language,
+                type=type_label,
+                start=r.start_date,
+                end=r.end_date,
+                project=r.project.name,
+                status=status_label,
+            )
+        )
     await message.answer("\n".join(lines))
 
 
@@ -52,7 +62,11 @@ async def coordinators_contacts(message: Message):
         any_found = True
         lines.append(f"📍 {region.name}")
         for c in coords:
-            contact = f"@{c.username}" if c.username and "@" not in c.username else (c.phone or c.email)
+            contact = (
+                f"@{c.username}"
+                if c.username and "@" not in c.username
+                else (c.phone or c.email)
+            )
             lines.append(f"  • {c.last_name} {c.first_name} — {contact}")
         lines.append("")
 

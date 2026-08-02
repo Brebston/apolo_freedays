@@ -5,9 +5,13 @@ from bot.locales import t
 
 def decision_keyboard(request_id: int, lang: str, can_reject: bool = True):
     builder = InlineKeyboardBuilder()
-    builder.button(text=t("btn_approve", lang), callback_data=f"decide:{request_id}:approved")
+    builder.button(
+        text=t("btn_approve", lang), callback_data=f"decide:{request_id}:approved"
+    )
     if can_reject:
-        builder.button(text=t("btn_reject", lang), callback_data=f"decide:{request_id}:rejected")
+        builder.button(
+            text=t("btn_reject", lang), callback_data=f"decide:{request_id}:rejected"
+        )
     builder.adjust(2)
     return builder.as_markup()
 
