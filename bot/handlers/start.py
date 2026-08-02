@@ -22,7 +22,9 @@ async def cmd_start(message: Message, state: FSMContext):
             reply_markup=main_menu_keyboard(user.language, user.is_staff),
         )
     else:
-        await message.answer(t("choose_language", "uk"), reply_markup=language_keyboard())
+        await message.answer(
+            t("choose_language", "uk"), reply_markup=language_keyboard()
+        )
 
 
 @router.callback_query(F.data.startswith("lang:"))
@@ -34,10 +36,13 @@ async def choose_language(callback: CallbackQuery, state: FSMContext):
         await set_user_language(callback.from_user.id, lang)
         await callback.message.edit_text(t("lang_set", lang))
         await callback.message.answer(
-            t("main_menu_title", lang), reply_markup=main_menu_keyboard(lang, user.is_staff),
+            t("main_menu_title", lang),
+            reply_markup=main_menu_keyboard(lang, user.is_staff),
         )
     else:
-        await callback.message.edit_text(t("welcome", lang), reply_markup=auth_keyboard(lang))
+        await callback.message.edit_text(
+            t("welcome", lang), reply_markup=auth_keyboard(lang)
+        )
     await callback.answer()
 
 
