@@ -13,14 +13,6 @@ def language_keyboard():
     return builder.as_markup()
 
 
-def auth_keyboard(lang: str):
-    builder = InlineKeyboardBuilder()
-    builder.button(text=t("btn_register", lang), callback_data="auth:register")
-    builder.button(text=t("btn_login", lang), callback_data="auth:login")
-    builder.adjust(1)
-    return builder.as_markup()
-
-
 def main_menu_keyboard(lang: str, is_staff: bool):
     builder = ReplyKeyboardBuilder()
     builder.button(text=t("btn_new_request", lang))
@@ -64,3 +56,11 @@ def confirm_keyboard(lang: str):
     builder.button(text=t("btn_cancel", lang), callback_data="confirm:no")
     builder.adjust(2)
     return builder.as_markup()
+
+
+def no_access_reply_keyboard(lang: str):
+    """For a user without access, the reply keyboard consists only of a language-switching button."""
+    builder = ReplyKeyboardBuilder()
+    builder.button(text=t("btn_language", lang))
+    builder.adjust(1)
+    return builder.as_markup(resize_keyboard=True)

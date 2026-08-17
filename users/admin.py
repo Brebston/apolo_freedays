@@ -1,11 +1,14 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 
+from .forms import UserCreationForm
 from .models import User
 
 
 @admin.register(User)
 class UserAdmin(DjangoUserAdmin):
+    add_form = UserCreationForm
+
     list_display = (
         "id",
         "last_name",
@@ -20,6 +23,7 @@ class UserAdmin(DjangoUserAdmin):
     list_filter = ("is_staff", "is_active", "language")
     search_fields = ("first_name", "last_name", "email", "phone", "telegram_id")
     ordering = ("last_name", "first_name")
+    readonly_fields = ("username",)
 
     fieldsets = (
         (None, {"fields": ("username", "password")}),
@@ -37,7 +41,7 @@ class UserAdmin(DjangoUserAdmin):
             },
         ),
         (
-            "Access rights (is_staff = coordinator)",
+            "Access",
             {
                 "fields": (
                     "is_active",
@@ -45,6 +49,11 @@ class UserAdmin(DjangoUserAdmin):
                     "is_superuser",
                     "groups",
                     "user_permissions",
+                ),
+                "description": (
+                    "is_active = access to the Telegram bot (without it, the user will receive "
+                    "an 'access denied' message). is_staff = coordinator (access to "
+                    "the coordinator panel in the bot and permission to log in to Django Admin)."
                 ),
             },
         ),
@@ -56,9 +65,9 @@ class UserAdmin(DjangoUserAdmin):
             {
                 "classes": ("wide",),
                 "fields": (
-                    "username",
                     "first_name",
                     "last_name",
+                    "telegram_id",
                     "email",
                     "phone",
                     "password1",

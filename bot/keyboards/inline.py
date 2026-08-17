@@ -32,3 +32,10 @@ def requests_list_keyboard(requests):
         builder.button(text=label, callback_data=f"cpanel_item:{r.id}")
     builder.adjust(1)
     return builder.as_markup()
+
+
+def no_access_keyboard(lang: str):
+    builder = InlineKeyboardBuilder()
+    builder.button(text=t("btn_show_my_id", lang), callback_data="myid:show")
+    builder.adjust(1)
+    return builder.as_markup()

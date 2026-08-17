@@ -25,7 +25,7 @@ from bot.utils import (
     get_regions,
     get_projects_by_region,
     get_used_dayoff_days_in_month,
-    get_user_by_telegram_id,
+    get_active_user_by_telegram_id,
     get_workers_count_on_date,
     save_notification_message_id,
 )
@@ -39,7 +39,7 @@ L4_MAX_DAYS = 31
 
 @router.message(TextIs("btn_new_request"))
 async def new_request_start(message: Message, state: FSMContext):
-    user = await get_user_by_telegram_id(message.from_user.id)
+    user = await get_active_user_by_telegram_id(message.from_user.id)
     if not user:
         return
     await state.clear()
@@ -266,7 +266,7 @@ async def confirm_request(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     lang = data.get("language", "uk")
     action = callback.data.split(":")[1]
-    user = await get_user_by_telegram_id(callback.from_user.id)
+    user = await get_active_user_by_telegram_id(callback.from_user.id)
 
     if action == "no":
         await _cancel_flow(callback, state, lang)
@@ -327,7 +327,7 @@ async def confirm_request(callback: CallbackQuery, state: FSMContext):
 
 async def _cancel_flow(callback: CallbackQuery, state: FSMContext, lang: str):
     await state.clear()
-    user = await get_user_by_telegram_id(callback.from_user.id)
+    user = await get_active_user_by_telegram_id(callback.from_user.id)
     await callback.message.edit_text(t("request_cancelled", lang))
     await callback.message.answer(
         t("main_menu_title", lang),
