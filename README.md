@@ -18,6 +18,7 @@ Telegram bot and Django Admin for tracking employee absences at a Polish staffin
 - [Django Admin — Entities](#django-admin--entities)
 - [Custom Function Reference](#custom-function-reference)
 - [Bot Business Logic (Flow)](#bot-business-logic-flow)
+- [Bot Access Control](#bot-access-control)
 - [Day-Off Limits](#day-off-limits)
 - [Email Notifications](#email-notifications)
 - [Localization](#localization)
@@ -33,27 +34,29 @@ Telegram bot and Django Admin for tracking employee absences at a Polish staffin
 The system consists of two parts sharing a single PostgreSQL database:
 
 1. **Telegram bot** (`aiogram 3.x`) — interface for workers (submitting requests) and coordinators (moderation).
-2. **Django Admin** — web panel for the super admin: managing regions, projects, limits, coordinators, and email recipients.
+2. **Django Admin** — web panel for the super admin: managing regions, projects, limits, user access, and email recipients.
 
 The bot talks to the Django ORM directly (wrapped in `sync_to_async`), with no separate REST API — both components live in the same Django project and share the same models.
+
+**Important:** there is no self-service registration in the bot. Access is granted exclusively by an administrator through Django Admin, based on Telegram ID.
 
 ## Architecture
 
 ```
 ┌─────────────┐      ┌──────────────┐      ┌─────────────┐
-│  Telegram    │◄────►│  bot (aiogram) │      │ web (gunicorn)│
-│  API         │      │  long polling  │      │ Django Admin  │
+│  Telegram   │◄────►│bot (aiogram) │      │web (gunicorn)│
+│  API        │      │long polling  │      │Django Admin  │
 └─────────────┘      └──────┬───────┘      └──────┬──────┘
-                             │  Django ORM (sync_to_async)  │
-                             ▼                              ▼
+                            │  Django ORM (sync_to_async) 
+                            ▼                     ▼
                       ┌─────────────────────────────────────┐
-                      │           PostgreSQL (db)             │
+                      │           PostgreSQL (db)           │
                       └─────────────────────────────────────┘
                              ▲
                              │ .delay()
-                      ┌──────┴───────┐      ┌─────────────┐
-                      │ celery worker │◄────►│ Redis (broker)│
-                      │ email tasks   │      └─────────────┘
+                      ┌──────┴───────┐       ┌─────────────┐
+                      │celery worker │◄────► │Redis (broker)│
+                      │email tasks   │       └─────────────┘
                       └──────────────┘
 ```
 
@@ -65,6 +68,8 @@ Services in `docker-compose.yml`: `db`, `redis`, `migrate` (one-shot, generates 
 config/                     Django settings, celery.py, urls.py, wsgi.py
 users/
   models.py                 Custom User model (AbstractUser + telegram_id, language)
+  forms.py                  Custom Django Admin user-creation form
+                             (no username field, password optional)
   admin.py                  UserAdmin
 core/
   models.py                 Region, Project, ProjectDateLimit, ProjectEmailRecipient, AbsenceRequest
@@ -73,17 +78,16 @@ core/
   templates/core/emails/    HTML email template
 bot/
   loader.py                 Bot and Dispatcher instances (aiogram)
-  states.py                 FSM states (registration, login, submitting a request)
+  states.py                 FSM states for submitting a request
   locales.py                Translation dictionary + t() function
   filters.py                Custom aiogram filter TextIs
   utils.py                  All Django ORM access from the bot (sync_to_async wrappers)
   keyboards/
     menus.py                Reply/inline keyboards for the main menu, type/region/project selection
     calendar.py             Interactive localized date-selection calendar
-    inline.py                Coordinator decision and panel keyboards
+    inline.py                Coordinator decision, panel, and access-denied keyboards
   handlers/
-    start.py                /start, language selection
-    auth.py                 Registration and login
+    start.py                /start, language selection, Telegram-ID access check
     request_flow.py         Submitting a request (type → region → project → dates → confirmation)
     cabinet.py               Worker's cabinet (my requests, coordinator contacts)
     coordinator.py          Coordinator panel, request decisions
@@ -95,7 +99,6 @@ bot/
 
 **Core (per the spec):**
 - Multilingual — Ukrainian, Polish, English, Russian
-- Bot registration/login (email + password), password message auto-deleted from chat
 - Submitting a request: type (day off / L4) → region → project → interactive calendar
 - Past dates cannot be selected
 - Confirmation card before submitting
@@ -106,6 +109,9 @@ bot/
 - Asynchronous email notifications via Celery to the To/CC recipients configured in Django Admin
 
 **Added beyond the base spec:**
+- **Telegram-ID-only access** — no in-bot registration or login at all; an administrator adds each user through Django Admin, entering just their Telegram ID (first/last name are required; email/phone/password are not)
+- **Flexible access revocation via `is_active`** — access can be disabled with a single click without deleting the user or losing their request history
+- **"Get my Telegram ID" button** on access denial — instantly produces a ready-to-forward text template for the coordinator
 - **Monthly day-off limit per project** — total days off a worker can take per project within a calendar month, not just per single request
 - **Worker limit per date** — how many people can be off at the same time on a given day, configured per project
 - **Per-date limit override** (`ProjectDateLimit`) — e.g., Aug 5 → 2 people, Aug 6 → 5 people, falling back to the project's general limit
@@ -125,7 +131,7 @@ docker compose exec web python manage.py createsuperuser
 ```
 
 Django Admin: http://localhost:8000/admin/
-Bot: message it `/start` on Telegram.
+Bot: message it `/start` on Telegram — until your Telegram ID is added in Django Admin, the bot will show an access-denied message.
 
 Startup order is fully automatic: `db`/`redis` become healthy, `migrate` generates and applies migrations, then `web`/`bot`/`celery` start.
 
@@ -164,7 +170,7 @@ celery -A config worker -l info
 
 | Model | Purpose |
 |---|---|
-| **Users** | Full name (Latin letters), email, phone, language, `is_staff` = coordinator, `Telegram ID` (filled automatically) |
+| **Users** | First/last name (Latin letters), **Telegram ID** (the key field — without it the bot stays inaccessible), `is_active` = bot access, `is_staff` = coordinator. Email, phone, and password are optional (password is only needed for coordinators who log into Django Admin itself) |
 | **Regions** | Region directory (Warsaw, Gdańsk, etc.) |
 | **Projects** | Name, region, `dayoff_limit` (monthly day limit), `max_workers_per_day` (limit per date, empty = unlimited), `coordinators` (M2M), inline lists of email recipients and per-date limit overrides |
 | **ProjectDateLimit** | Worker-limit override for a specific date of a specific project |
@@ -177,12 +183,8 @@ celery -A config worker -l info
 
 | Function | Description |
 |---|---|
-| `is_valid_name(value)` | Checks that a first/last name contains only Latin letters |
-| `is_valid_email(value)` | Validates email format via Django's validator |
-| `get_user_by_telegram_id(telegram_id)` | Looks up a user by Telegram ID |
-| `get_user_by_email(email)` | Looks up a user by email (for login / duplicate checks during registration) |
-| `create_user(...)` | Creates a new User, hashing the password |
-| `link_telegram_and_check_password(email, password, telegram_id)` | Verifies the password on login and links the current Telegram account to an existing User |
+| `get_user_by_telegram_id(telegram_id)` | A "raw" lookup by Telegram ID (regardless of `is_active`) — used where the handler itself needs to branch on missing access (e.g. `/start`) |
+| `get_active_user_by_telegram_id(telegram_id)` | Same, but only returns the user if `is_active=True` — used in every handler that grants access to actual bot functionality (submitting requests, the cabinet, the coordinator panel) |
 | `set_user_language(telegram_id, language)` | Changes the user's interface language |
 | `get_regions()` | List of all regions |
 | `get_projects_by_region(region_id)` | Projects for a specific region |
@@ -199,6 +201,12 @@ celery -A config worker -l info
 | `get_my_requests(user_id)` | The worker's last 20 requests |
 | `get_project_requests(project_ids, status_filter)` | Requests for a coordinator's projects with an "All/New/Processed" filter |
 | `save_notification_message_id(request_id, coordinator_telegram_id, message_id)` | Stores the sent push notification's message ID (for potential later editing) |
+
+### `users/forms.py`
+
+| Object | Description |
+|---|---|
+| `UserCreationForm` | Custom Django Admin user-creation form. The `username` field is removed from the form (auto-generated in `User.save()`); the password is fully optional — if left blank, `set_unusable_password()` is called (blocks Django Admin login, has no effect on bot access) |
 
 ### `bot/locales.py`
 
@@ -223,15 +231,16 @@ celery -A config worker -l info
 
 | Function | Description |
 |---|---|
-| `language_keyboard()` | Language selection (4 buttons) |
-| `auth_keyboard(lang)` | "Register" / "Login" |
+| `language_keyboard()` | Language selection (4 buttons) — the first step on every `/start` |
 | `main_menu_keyboard(lang, is_staff)` | Main reply menu; "Coordinator panel" button only shown if `is_staff=True` |
+| `no_access_reply_keyboard(lang)` | A reduced reply menu for users without access — only the "🌐 Language" button |
 | `request_type_keyboard(lang)` | "Day off" / "Sick leave (L4)" / "Cancel" |
 | `regions_keyboard(regions)` / `projects_keyboard(projects)` | Dynamic lists sourced from the DB |
 | `confirm_keyboard(lang)` | "Confirm" / "Cancel" |
 | `decision_keyboard(request_id, lang, can_reject=True)` | Coordinator decision buttons; the "Reject" button is omitted if `can_reject=False` (L4) |
 | `coordinator_panel_keyboard(lang)` | "All/New/Processed" filters |
 | `requests_list_keyboard(requests)` | Request list for the coordinator panel |
+| `no_access_keyboard(lang)` | An inline "🆔 Get my Telegram ID" button shown on access denial |
 
 ### `core/tasks.py`
 
@@ -245,7 +254,7 @@ celery -A config worker -l info
 | Method/Object | Description |
 |---|---|
 | `latin_name_validator` | A `RegexValidator` allowing only `[A-Za-z\-]` for first/last names |
-| `AbsenceRequest.can_be_rejected()` | `True` only for the "Day off" type; always `False` for L4 — used both by the bot and potentially the admin to enforce the rejection block |
+| `AbsenceRequest.can_be_rejected()` | `True` only for the "Day off" type; always `False` for L4 |
 | `Project.dayoff_limit` | Monthly day-off limit (not a per-request limit) |
 | `Project.max_workers_per_day` | `null=True` → unlimited; otherwise the general concurrent-absence limit per date |
 | `AbsenceRequest.dates` | A `JSONField` holding the full list of selected ISO dates — needed for accurate monthly-limit counting with non-contiguous date selections |
@@ -254,15 +263,29 @@ celery -A config worker -l info
 
 | Method | Description |
 |---|---|
-| `User.save()` | If `username` is empty, automatically sets it to `email` (username isn't collected separately in the bot) |
+| `User.save()` | If `username` is empty, generates one automatically: email → `tg{telegram_id}` → a random string (in that priority order) |
 
 ## Bot Business Logic (Flow)
 
-1. **`/start`** → if the user is unknown — language selection → "Register"/"Login"; if known — straight to the main menu
-2. **Registration**: first name → last name (Latin letters, validated) → email (uniqueness check) → phone → password → `create_user()` → the password message is deleted (`message.delete()`)
-3. **Login**: email → password → `link_telegram_and_check_password()` links the current `telegram_id` to an existing account (the typical scenario for a coordinator who was first created in Django Admin)
-4. **Submitting a request**: type → region → project (limits are read here: `dayoff_limit`, `max_workers_per_day`) → calendar (every date tap checks the monthly limit and the per-date limit/override) → confirmation card → `create_absence_request()` → `send_absence_request_email.delay()` + push to all of the project's coordinators with inline decision buttons
-5. **Coordinator decision**: works identically whether triggered from the push notification or the coordinator panel (`bot/handlers/coordinator.py:decide()`); for L4 the "Reject" button is missing at the keyboard level and additionally blocked at the handler level
+1. **`/start`** (and the "🌐 Language" button) → **always** shows language selection first, regardless of whether the user already has access
+2. **Access check** immediately after the language is chosen: a lookup by `telegram_id`
+   - **Found + `is_active=True`** → the language is saved to the DB, the main menu is shown
+   - **Not found OR `is_active=False`** → an "access denied" message with an inline "🆔 Get my Telegram ID" button, and the reply menu is reduced to just the "🌐 Language" button
+3. **"Get my Telegram ID"** → the bot sends a ready-to-forward text template containing the user's ID — just forward it to the coordinator
+4. **Granting access**: an administrator/coordinator goes to **Django Admin → Users → Add user**, enters the Telegram ID (and first/last name) — that's enough, everything else is optional
+5. **Submitting a request**: type → region → project (limits are read here) → calendar (every date tap checks the monthly limit and the per-date limit/override) → confirmation card → `create_absence_request()` → email + push to all of the project's coordinators with inline decision buttons
+6. **Coordinator decision**: works identically whether triggered from the push notification or the coordinator panel; for L4 the "Reject" button is missing at the keyboard level and additionally blocked at the handler level
+
+## Bot Access Control
+
+There's no registration or login in the bot — access is fully controlled by an administrator:
+
+1. A new worker messages the bot `/start`, picks a language, and receives an access-denied message with a button to get their Telegram ID
+2. They forward that message to a coordinator/admin
+3. The admin goes to Django Admin → Users → Add user, enters the Telegram ID, first name, and last name (email/phone/password can be left blank)
+4. The worker sends `/start` again — they now see the main menu
+
+**Revoking access** without deleting the user or losing their request history — just uncheck `is_active` in Django Admin. This is checked in every key bot handler via `get_active_user_by_telegram_id()`, not only on `/start`.
 
 ## Day-Off Limits
 
@@ -281,8 +304,9 @@ Supported languages: `uk`, `pl`, `en`, `ru`. To add a new language — add a key
 
 ## Security
 
-- The password never stays in the chat — the message containing it is deleted immediately after processing
-- Passwords are stored via `django.contrib.auth.hashers` (hashed, never plain text)
+- **Whitelist access by Telegram ID** — no self-service registration in the bot whatsoever; anyone not added by an admin sees nothing beyond language selection
+- `is_active` allows instantly revoking bot access without deleting the user (request history is preserved)
+- The Django Admin password is optional when creating a user; if left blank, the account gets an `unusable password` (blocks Django Admin login, has no effect on the bot)
 - Django Admin: automatic logout after 10 minutes of inactivity (`SESSION_COOKIE_AGE=600`, `SESSION_SAVE_EVERY_REQUEST=True`)
 - Full names accept Latin letters only — guards against special-character injection in reports/emails
 - SMTP via Gmail requires an App Password (2FA), not the regular account password
@@ -301,10 +325,11 @@ For local development with PyCharm, you can enable auto-restart on file save (wi
 | `WORKER TIMEOUT` in gunicorn | A single sync worker with too short a timeout — fixed with `--workers 2 --timeout 60` |
 | A bot button just spins with no response | An unhandled exception in the handler — aiogram never calls `callback.answer()`; check `docker compose logs -f bot` at the moment of the click |
 | `SMTPAuthenticationError 535` (Gmail) | An App Password (2FA) is required, not the regular password; run `docker compose up -d --force-recreate` after changing `.env`, since `restart` doesn't reload environment variables |
+| A blocked user still sees the old menu | Telegram's reply keyboard doesn't refresh on its own — a new message with a new `reply_markup` must be sent (implemented in `bot/handlers/start.py`) |
 
 ## Roadmap
 
 - `RedisStorage` for FSM instead of `MemoryStorage` (needed for multiple bot replicas)
 - Pagination for the request list in the coordinator panel (currently capped at 30 records)
 - Rate-limiting / anti-flood middleware for aiogram
-- Automatic bot-side logout on inactivity (separate from the Django Admin session timeout)
+- Bulk Telegram ID import (e.g. from CSV) for quickly seeding the initial user list
