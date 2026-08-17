@@ -1,30 +1,10 @@
 from datetime import date
 
 from asgiref.sync import sync_to_async
-from django.contrib.auth.hashers import check_password, make_password
-from django.core.exceptions import ValidationError
-from django.core.validators import validate_email as django_validate_email
 from django.utils import timezone
 
 from core.models import AbsenceRequest, Project, Region, RequestStatus, RequestType
-from users.models import User, latin_name_validator
-
-
-def is_valid_name(value: str) -> bool:
-    try:
-        latin_name_validator(value)
-        return bool(value)
-    except ValidationError:
-        return False
-
-
-def is_valid_email(value: str) -> bool:
-    try:
-        django_validate_email(value)
-        return True
-    except ValidationError:
-        return False
-
+from users.models import User
 
 # ---------------------------------------------------------------------------
 # Users / auth
@@ -34,36 +14,6 @@ def is_valid_email(value: str) -> bool:
 @sync_to_async
 def get_user_by_telegram_id(telegram_id: int):
     return User.objects.filter(telegram_id=telegram_id).first()
-
-
-@sync_to_async
-def get_user_by_email(email: str):
-    return User.objects.filter(email__iexact=email).first()
-
-
-@sync_to_async
-def create_user(telegram_id, first_name, last_name, email, phone, password, language):
-    user = User(
-        telegram_id=telegram_id,
-        first_name=first_name,
-        last_name=last_name,
-        email=email,
-        phone=phone,
-        language=language,
-    )
-    user.password = make_password(password)
-    user.save()
-    return user
-
-
-@sync_to_async
-def link_telegram_and_check_password(email: str, password: str, telegram_id: int):
-    user = User.objects.filter(email__iexact=email).first()
-    if not user or not check_password(password, user.password):
-        return None
-    user.telegram_id = telegram_id
-    user.save(update_fields=["telegram_id"])
-    return user
 
 
 @sync_to_async

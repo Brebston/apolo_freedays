@@ -16,101 +16,39 @@ TEXTS = {
         "en": "✅ Language set to English.",
         "ru": "✅ Язык изменён на русский.",
     },
-    "welcome": {
-        "uk": "Вітаємо! Оберіть дію:",
-        "pl": "Witamy! Wybierz akcję:",
-        "en": "Welcome! Choose an action:",
-        "ru": "Добро пожаловать! Выберите действие:",
+    "access_denied": {
+        "uk": "⛔ У вас немає доступу до бота.\nЗверніться до координатора, щоб отримати доступ.",
+        "pl": "⛔ Nie masz dostępu do bota.\nSkontaktuj się z koordynatorem, aby uzyskać dostęp.",
+        "en": "⛔ You don't have access to this bot.\nContact your coordinator to get access.",
+        "ru": "⛔ У вас нет доступа к боту.\nОбратитесь к координатору, чтобы получить доступ.",
     },
-    "btn_register": {
-        "uk": "📝 Реєстрація",
-        "pl": "📝 Rejestracja",
-        "en": "📝 Register",
-        "ru": "📝 Регистрация",
+    "btn_show_my_id": {
+        "uk": "🆔 Дізнатися свій Telegram ID",
+        "pl": "🆔 Sprawdź swój Telegram ID",
+        "en": "🆔 Get my Telegram ID",
+        "ru": "🆔 Узнать свой Telegram ID",
     },
-    "btn_login": {
-        "uk": "🔑 Вхід",
-        "pl": "🔑 Logowanie",
-        "en": "🔑 Login",
-        "ru": "🔑 Вход",
-    },
-    "reg_ask_first_name": {
-        "uk": "Введіть ваше ім'я (латинськими літерами, без цифр і символів):",
-        "pl": "Podaj swoje imię (literami łacińskimi, bez cyfr i symboli):",
-        "en": "Enter your first name (Latin letters only, no digits or symbols):",
-        "ru": "Введите имя (латинскими буквами, без цифр и символов):",
-    },
-    "reg_invalid_name": {
-        "uk": "❌ Дозволені лише латинські літери. Спробуйте ще раз:",
-        "pl": "❌ Dozwolone są tylko litery łacińskie. Spróbuj ponownie:",
-        "en": "❌ Only Latin letters are allowed. Try again:",
-        "ru": "❌ Разрешены только латинские буквы. Попробуйте снова:",
-    },
-    "reg_ask_last_name": {
-        "uk": "Введіть ваше прізвище:",
-        "pl": "Podaj swoje nazwisko:",
-        "en": "Enter your last name:",
-        "ru": "Введите фамилию:",
-    },
-    "reg_ask_email": {
-        "uk": "Введіть вашу email-адресу:",
-        "pl": "Podaj swój adres email:",
-        "en": "Enter your email address:",
-        "ru": "Введите ваш email:",
-    },
-    "reg_invalid_email": {
-        "uk": "❌ Некоректний формат email. Спробуйте ще раз:",
-        "pl": "❌ Nieprawidłowy format email. Spróbuj ponownie:",
-        "en": "❌ Invalid email format. Try again:",
-        "ru": "❌ Некорректный формат email. Попробуйте снова:",
-    },
-    "reg_email_exists": {
-        "uk": "❌ Користувач із такою поштою вже існує. Скористайтесь «Вхід» або введіть іншу пошту:",
-        "pl": "❌ Użytkownik z tym adresem już istnieje. Użyj «Logowanie» albo podaj inny email:",
-        "en": '❌ A user with this email already exists. Use "Login" or enter another email:',
-        "ru": "❌ Пользователь с такой почтой уже существует. Используйте «Вход» или введите другую почту:",
-    },
-    "reg_ask_phone": {
-        "uk": "Введіть ваш номер телефону:",
-        "pl": "Podaj swój numer telefonu:",
-        "en": "Enter your phone number:",
-        "ru": "Введите номер телефона:",
-    },
-    "reg_ask_password": {
-        "uk": "Придумайте пароль (це повідомлення буде видалено одразу після реєстрації):",
-        "pl": "Ustaw hasło (ta wiadomość zostanie usunięta zaraz po rejestracji):",
-        "en": "Set a password (this message will be deleted right after registration):",
-        "ru": "Придумайте пароль (это сообщение будет удалено сразу после регистрации):",
-    },
-    "reg_success": {
-        "uk": "✅ Реєстрацію завершено успішно!",
-        "pl": "✅ Rejestracja zakończona pomyślnie!",
-        "en": "✅ Registration completed successfully!",
-        "ru": "✅ Регистрация успешно завершена!",
-    },
-    "login_ask_email": {
-        "uk": "Введіть email вашого акаунта:",
-        "pl": "Podaj email swojego konta:",
-        "en": "Enter your account email:",
-        "ru": "Введите email вашего аккаунта:",
-    },
-    "login_ask_password": {
-        "uk": "Введіть пароль (це повідомлення буде видалено):",
-        "pl": "Podaj hasło (ta wiadomość zostanie usunięta):",
-        "en": "Enter your password (this message will be deleted):",
-        "ru": "Введите пароль (это сообщение будет удалено):",
-    },
-    "login_failed": {
-        "uk": "❌ Невірний email або пароль. Спробуйте /start ще раз.",
-        "pl": "❌ Nieprawidłowy email lub hasło. Spróbuj ponownie /start.",
-        "en": "❌ Invalid email or password. Try /start again.",
-        "ru": "❌ Неверный email или пароль. Попробуйте /start снова.",
-    },
-    "login_success": {
-        "uk": "✅ Вхід виконано успішно!",
-        "pl": "✅ Zalogowano pomyślnie!",
-        "en": "✅ Logged in successfully!",
-        "ru": "✅ Вход выполнен успешно!",
+    "my_id_template": {
+        "uk": (
+            "Перешліть це повідомлення координатору, щоб отримати доступ до бота:\n\n"
+            "👤 Мій Telegram ID: {id}\n\n"
+            "Прошу надати мені доступ до бота обліку відсутностей."
+        ),
+        "pl": (
+            "Prześlij tę wiadomość do koordynatora, aby uzyskać dostęp do bota:\n\n"
+            "👤 Mój Telegram ID: {id}\n\n"
+            "Proszę o nadanie mi dostępu do bota ewidencji nieobecności."
+        ),
+        "en": (
+            "Forward this message to your coordinator to get access to the bot:\n\n"
+            "👤 My Telegram ID: {id}\n\n"
+            "Please grant me access to the absence-tracking bot."
+        ),
+        "ru": (
+            "Перешлите это сообщение координатору, чтобы получить доступ к боту:\n\n"
+            "👤 Мой Telegram ID: {id}\n\n"
+            "Прошу предоставить мне доступ к боту учёта отсутствий."
+        ),
     },
     "main_menu_title": {
         "uk": "Головне меню:",

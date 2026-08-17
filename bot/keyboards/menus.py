@@ -13,14 +13,6 @@ def language_keyboard():
     return builder.as_markup()
 
 
-def auth_keyboard(lang: str):
-    builder = InlineKeyboardBuilder()
-    builder.button(text=t("btn_register", lang), callback_data="auth:register")
-    builder.button(text=t("btn_login", lang), callback_data="auth:login")
-    builder.adjust(1)
-    return builder.as_markup()
-
-
 def main_menu_keyboard(lang: str, is_staff: bool):
     builder = ReplyKeyboardBuilder()
     builder.button(text=t("btn_new_request", lang))

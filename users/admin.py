@@ -37,7 +37,7 @@ class UserAdmin(DjangoUserAdmin):
             },
         ),
         (
-            "Access rights (is_staff = coordinator)",
+            "Access",
             {
                 "fields": (
                     "is_active",
@@ -45,6 +45,11 @@ class UserAdmin(DjangoUserAdmin):
                     "is_superuser",
                     "groups",
                     "user_permissions",
+                ),
+                "description": (
+                    "is_active = access to the Telegram bot (without it, the user will receive "
+                    'an "access denied" message). is_staff = coordinator (access to the '
+                    "coordinator panel in the bot and permission to log in to the Django Admin)."
                 ),
             },
         ),
@@ -59,6 +64,7 @@ class UserAdmin(DjangoUserAdmin):
                     "username",
                     "first_name",
                     "last_name",
+                    "telegram_id",
                     "email",
                     "phone",
                     "password1",
