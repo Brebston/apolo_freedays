@@ -22,6 +22,12 @@ TEXTS = {
         "en": "⛔ You don't have access to this bot.\nContact your coordinator to get access.",
         "ru": "⛔ У вас нет доступа к боту.\nОбратитесь к координатору, чтобы получить доступ.",
     },
+    "access_denied_hint": {
+        "uk": "Змінити мову можна кнопкою нижче.",
+        "pl": "Język możesz zmienić przyciskiem poniżej.",
+        "en": "You can change the language using the button below.",
+        "ru": "Изменить язык можно кнопкой ниже.",
+    },
     "btn_show_my_id": {
         "uk": "🆔 Дізнатися свій Telegram ID",
         "pl": "🆔 Sprawdź swój Telegram ID",

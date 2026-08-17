@@ -1,3 +1,5 @@
+import uuid
+
 from django.contrib.auth.models import AbstractUser
 from django.core.validators import RegexValidator
 from django.db import models
@@ -55,7 +57,12 @@ class User(AbstractUser):
 
     def save(self, *args, **kwargs):
         if not self.username:
-            self.username = self.email or f"tg{self.telegram_id or ''}"
+            if self.email:
+                self.username = self.email
+            elif self.telegram_id:
+                self.username = f"tg{self.telegram_id}"
+            else:
+                self.username = f"user-{uuid.uuid4().hex[:12]}"
         super().save(*args, **kwargs)
 
     def __str__(self):

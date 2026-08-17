@@ -14,7 +14,7 @@ from bot.utils import (
     get_coordinator_project_ids,
     get_project_requests,
     get_request,
-    get_user_by_telegram_id,
+    get_active_user_by_telegram_id,
 )
 from core.models import RequestStatus
 
@@ -23,7 +23,7 @@ router = Router()
 
 @router.message(TextIs("btn_coordinator_panel"))
 async def coordinator_panel(message: Message):
-    user = await get_user_by_telegram_id(message.from_user.id)
+    user = await get_active_user_by_telegram_id(message.from_user.id)
     if not user or not user.is_staff:
         return
     await message.answer(
@@ -34,7 +34,7 @@ async def coordinator_panel(message: Message):
 
 @router.callback_query(F.data.startswith("cpanel:"))
 async def coordinator_panel_filter(callback: CallbackQuery):
-    user = await get_user_by_telegram_id(callback.from_user.id)
+    user = await get_active_user_by_telegram_id(callback.from_user.id)
     if not user or not user.is_staff:
         await callback.answer()
         return
@@ -58,7 +58,7 @@ async def coordinator_panel_filter(callback: CallbackQuery):
 
 @router.callback_query(F.data.startswith("cpanel_item:"))
 async def coordinator_panel_item(callback: CallbackQuery):
-    user = await get_user_by_telegram_id(callback.from_user.id)
+    user = await get_active_user_by_telegram_id(callback.from_user.id)
     if not user or not user.is_staff:
         await callback.answer()
         return
@@ -100,7 +100,7 @@ async def decide(callback: CallbackQuery):
     Handles "Confirm"/"Reject" clicks — whether from a push notification
     about a new request or from the coordinator panel.
     """
-    coordinator = await get_user_by_telegram_id(callback.from_user.id)
+    coordinator = await get_active_user_by_telegram_id(callback.from_user.id)
     if not coordinator or not coordinator.is_staff:
         await callback.answer()
         return

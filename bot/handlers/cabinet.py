@@ -7,7 +7,7 @@ from bot.utils import (
     get_coordinators_by_region,
     get_my_requests,
     get_regions,
-    get_user_by_telegram_id,
+    get_active_user_by_telegram_id,
 )
 
 router = Router()
@@ -15,7 +15,7 @@ router = Router()
 
 @router.message(TextIs("btn_my_requests"))
 async def my_requests(message: Message):
-    user = await get_user_by_telegram_id(message.from_user.id)
+    user = await get_active_user_by_telegram_id(message.from_user.id)
     if not user:
         return
     requests = await get_my_requests(user.id)
@@ -47,7 +47,7 @@ async def my_requests(message: Message):
 
 @router.message(TextIs("btn_coordinators"))
 async def coordinators_contacts(message: Message):
-    user = await get_user_by_telegram_id(message.from_user.id)
+    user = await get_active_user_by_telegram_id(message.from_user.id)
     if not user:
         return
 

@@ -5,7 +5,11 @@ from aiogram.types import CallbackQuery, Message
 
 from bot.filters import TextIs
 from bot.keyboards.inline import no_access_keyboard
-from bot.keyboards.menus import language_keyboard, main_menu_keyboard
+from bot.keyboards.menus import (
+    language_keyboard,
+    main_menu_keyboard,
+    no_access_reply_keyboard,
+)
 from bot.locales import t
 from bot.utils import get_user_by_telegram_id, set_user_language
 
@@ -39,10 +43,13 @@ async def choose_language(callback: CallbackQuery, state: FSMContext):
             reply_markup=main_menu_keyboard(lang, user.is_staff),
         )
     else:
-        # Користувача немає в базі АБО is_active=False — доступ заборонено.
         await callback.message.edit_text(
             t("access_denied", lang),
             reply_markup=no_access_keyboard(lang),
+        )
+        await callback.message.answer(
+            t("access_denied_hint", lang),
+            reply_markup=no_access_reply_keyboard(lang),
         )
     await callback.answer()
 

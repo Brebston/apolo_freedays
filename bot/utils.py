@@ -17,6 +17,17 @@ def get_user_by_telegram_id(telegram_id: int):
 
 
 @sync_to_async
+def get_active_user_by_telegram_id(telegram_id: int):
+    """
+    Same as get_user_by_telegram_id, but returns the user only if is_active=True.
+    It is used in all handlers that provide access to the bot's functionality—unlike
+    get_user_by_telegram_id, which remains a "raw" lookup for cases where we handle
+    an inactive user ourselves (e.g., /start).
+    """
+    return User.objects.filter(telegram_id=telegram_id, is_active=True).first()
+
+
+@sync_to_async
 def set_user_language(telegram_id: int, language: str):
     User.objects.filter(telegram_id=telegram_id).update(language=language)
 
