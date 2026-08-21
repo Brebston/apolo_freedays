@@ -2,7 +2,7 @@
 
 Telegram-бот та Django Admin для обліку відсутностей працівників польської агенції праці: подання, модерація й автоматичне сповіщення про вихідні дні та лікарняні (L4).
 
-**Стек:** Python 3.12 · Django 5 · aiogram 3.x · PostgreSQL · Celery + Redis · Docker Compose
+**Стек:** Python 3.12 · Django 5 · aiogram 3.x · PostgreSQL · Celery + Celery Beat + Redis · Docker Compose
 
 ---
 
@@ -20,7 +20,8 @@ Telegram-бот та Django Admin для обліку відсутностей �
 - [Бізнес-логіка бота (флоу)](#бізнес-логіка-бота-флоу)
 - [Доступ до бота](#доступ-до-бота)
 - [Ліміти вихідних](#ліміти-вихідних)
-- [Email-розсилка](#email-розсилка)
+- [Розсилки повідомлень](#розсилки-повідомлень)
+- [Email-розсилка зголошень](#email-розсилка-зголошень)
 - [Локалізація](#локалізація)
 - [Безпека](#безпека)
 - [Розробка (hot-reload)](#розробка-hot-reload)
@@ -34,7 +35,7 @@ Telegram-бот та Django Admin для обліку відсутностей �
 Система складається з двох частин, що працюють над спільною базою даних PostgreSQL:
 
 1. **Telegram-бот** (`aiogram 3.x`) — інтерфейс для працівників (подача зголошень) і координаторів (модерація).
-2. **Django Admin** — вебпанель для суперадміна: керування регіонами, проєктами, лімітами, доступом користувачів та email-розсилками.
+2. **Django Admin** — вебпанель для суперадміна: керування регіонами, проєктами, лімітами, доступом користувачів, email-розсилками та довільними розсилками повідомлень у Telegram.
 
 Бот звертається до Django ORM напряму (обгорнутий у `sync_to_async`), без окремого REST API — обидва компоненти живуть в одному Django-проєкті й діляться моделями.
 
@@ -52,29 +53,38 @@ Telegram-бот та Django Admin для обліку відсутностей �
                       ┌─────────────────────────────────────┐
                       │           PostgreSQL (db)           │
                       └─────────────────────────────────────┘
-                             ▲
-                             │ .delay()
-                      ┌──────┴───────┐      ┌─────────────┐
-                      │celery worker │◄────►│Redis (broker)│
-                      │email-таски   │      └─────────────┘
+                             ▲                    ▲
+                             │ .delay()           │ читає розклад
+                      ┌──────┴───────┐      ┌──────┴───────┐
+                      │ celery worker│◄────►│ celery-beat  │
+                      │ email + push-│      │(планувальник,│
+                      │ розсилки     │      │ кожні 5 хв)  │
+                      └──────┬───────┘      └──────────────┘
+                             │
+                      ┌──────┴───────┐
+                      │Redis (broker)│
                       └──────────────┘
 ```
 
-Сервіси в `docker-compose.yml`: `db`, `redis`, `migrate` (одноразовий, генерує й накатує міграції перед стартом решти), `web`, `bot`, `celery`. Порядок старту контролюється через `depends_on: condition: service_healthy / service_completed_successfully`.
+Сервіси в `docker-compose.yml`: `db`, `redis`, `migrate` (одноразовий, генерує й накатує міграції перед стартом решти), `web`, `bot`, `celery`, `celery-beat`. Порядок старту контролюється через `depends_on: condition: service_healthy / service_completed_successfully`.
 
 ## Структура проєкту
 
 ```
-config/                     Django settings, celery.py, urls.py, wsgi.py
+config/                     Django settings (+ CELERY_BEAT_SCHEDULE), celery.py, urls.py, wsgi.py
 users/
   models.py                 Кастомна модель User (AbstractUser + telegram_id, мова)
   forms.py                  Кастомна форма створення користувача в Django Admin
                              (без username, пароль необов'язковий)
   admin.py                  UserAdmin
 core/
-  models.py                 Region, Project, ProjectDateLimit, ProjectEmailRecipient, AbsenceRequest
+  models.py                 Region, Project, ProjectDateLimit, ProjectEmailRecipient,
+                             AbsenceRequest, Broadcast (розсилки повідомлень)
   admin.py                  Django Admin для всіх сутностей проєкту
-  tasks.py                  Celery-таска email-розсилки (HTML, польська)
+  admin_widgets.py          Кастомний Textarea-віджет з emoji-пікером
+  tasks.py                  Celery-таски: email-розсилка зголошень (HTML, польська),
+                             відправка й перевірка розсилок повідомлень
+  static/core/admin/        CSS/JS emoji-пікера для Django Admin (без зовнішніх залежностей)
   templates/core/emails/    HTML-шаблон листа
 bot/
   loader.py                 Інстанси Bot і Dispatcher (aiogram)
@@ -115,6 +125,7 @@ bot/
 - **Місячний ліміт вихідних на проєкт** — сумарна кількість вихідних працівника по проєкту за календарний місяць, а не лише за одне зголошення
 - **Ліміт працівників на дату** — скільки людей одночасно можуть бути на вихідному в один день, окремо на проєкт
 - **Перевизначення ліміту для конкретної дати** (`ProjectDateLimit`) — наприклад, 05.08 → 2 особи, 06.08 → 5 осіб, з фолбеком на загальний ліміт проєкту
+- **Розсилки повідомлень працівникам** через Django Admin — одноразові (конкретна дата й час) або регулярні (щодня/щотижня/щомісяця, наприклад «1-го числа кожного місяця»), з вибором аудиторії та вбудованим emoji-пікером
 - **HTML-лист польською мовою** з кольоровим статус-бейджем замість простого тексту
 - **Автоматичне вилогування з Django Admin** за 10 хв неактивності
 - **WhiteNoise** для роздачі статики адмінки без окремого nginx
@@ -133,7 +144,7 @@ docker compose exec web python manage.py createsuperuser
 Django Admin: http://localhost:8000/admin/
 Бот: напишіть йому `/start` у Telegram — доки ваш Telegram ID не додано в Django Admin, бот покаже повідомлення про відсутність доступу.
 
-Порядок старту повністю автоматичний: `db`/`redis` → healthy, `migrate` генерує та накатує міграції, потім стартують `web`/`bot`/`celery`.
+Порядок старту повністю автоматичний: `db`/`redis` → healthy, `migrate` генерує та накатує міграції, потім стартують `web`/`bot`/`celery`/`celery-beat`.
 
 ## Локальний запуск без Docker
 
@@ -147,10 +158,11 @@ cp .env.example .env   # POSTGRES_HOST=localhost, REDIS_URL=redis://localhost:63
 python manage.py migrate
 python manage.py createsuperuser
 
-# три окремі термінали:
+# чотири окремі термінали:
 python manage.py runserver
 python manage.py runbot
 celery -A config worker -l info
+celery -A config beat -l info
 ```
 
 ## Змінні середовища (`.env`)
@@ -161,7 +173,7 @@ celery -A config worker -l info
 | `DJANGO_DEBUG` | `1` для розробки, `0` для продакшн |
 | `DJANGO_ALLOWED_HOSTS` | Дозволені хости через кому |
 | `POSTGRES_DB/USER/PASSWORD/HOST/PORT` | Підключення до PostgreSQL (`HOST=db` у Docker) |
-| `REDIS_URL` | Брокер/бекенд Celery |
+| `REDIS_URL` | Брокер/бекенд Celery та Celery Beat |
 | `BOT_TOKEN` | Токен від [@BotFather](https://t.me/BotFather) |
 | `EMAIL_HOST/PORT/HOST_USER/HOST_PASSWORD/USE_TLS` | SMTP (для Gmail — обов'язково App Password, не звичайний пароль) |
 | `DEFAULT_FROM_EMAIL` | Адреса відправника |
@@ -176,6 +188,7 @@ celery -A config worker -l info
 | **ProjectDateLimit** | Перевизначення ліміту працівників для конкретної дати конкретного проєкту |
 | **ProjectEmailRecipient** | Email-адреси отримувачів проєкту з типом To/CC |
 | **AbsenceRequest** | Журнал усіх зголошень з фільтрами за статусом/типом/проєктом/датою |
+| **Broadcast** (Newsletters) | Розсилки повідомлень працівникам у Telegram: текст (з emoji-пікером), аудиторія, розклад (одноразовий/регулярний), статистика останньої відправки |
 
 ## Довідник кастомних функцій
 
@@ -207,6 +220,12 @@ celery -A config worker -l info
 | Об'єкт | Опис |
 |---|---|
 | `UserCreationForm` | Кастомна форма створення користувача в Django Admin. Поле `username` прибрано з форми (генерується автоматично в `User.save()`); пароль повністю необов'язковий — якщо не задати, викликається `set_unusable_password()` (унеможливлює вхід у Django Admin, не впливає на доступ до бота) |
+
+### `core/admin_widgets.py`
+
+| Об'єкт | Опис |
+|---|---|
+| `EmojiTextarea` | Кастомний `forms.Textarea` з клікабельною панеллю emoji над полем (в Django Admin). Підключає CSS/JS через `Media`, без зовнішніх бібліотек — файли лежать у `core/static/core/admin/emoji_picker.{css,js}`. Клік по emoji вставляє символ під курсором у текстове поле |
 
 ### `bot/locales.py`
 
@@ -248,6 +267,8 @@ celery -A config worker -l info
 |---|---|
 | `send_absence_request_email(self, request_id)` | Celery-таска (bind=True, до 3 повторних спроб): рендерить HTML-шаблон польською, формує plain-text fallback, надсилає на всіх To/CC отримувачів проєкту |
 | `_STATUS_LABELS_PL`, `_TYPE_LABELS_PL` | Мапи статус/тип → польська мітка + колір бейджа (незалежно від мови даних у БД — лист завжди польською) |
+| `send_broadcast_message(self, broadcast_id)` | Celery-таска (bind=True, до 3 повторних спроб): надсилає одну розсилку всім її отримувачам через Telegram Bot API (напряму HTTP-запитом, з обробкою rate-limit 429), оновлює статистику (`last_sent_at`, `last_sent_count`, `last_failed_count`) |
+| `check_and_send_due_broadcasts()` | Періодична Celery Beat-таска (кожні 5 хв): перевіряє всі активні розсилки й ставить у чергу ті, чий час (за розкладом чи повторенням) настав |
 
 ### `core/models.py`
 
@@ -258,6 +279,9 @@ celery -A config worker -l info
 | `Project.dayoff_limit` | Місячний ліміт вихідних (не ліміт на одне зголошення) |
 | `Project.max_workers_per_day` | `null=True` → без обмежень; інакше — загальний ліміт одночасної відсутності по датах |
 | `AbsenceRequest.dates` | `JSONField` з повним списком обраних ISO-дат — потрібен для точного підрахунку місячного ліміту при негрупових вибірках днів |
+| `RecurrenceType`, `BroadcastAudience` | `TextChoices` для типу повторення розсилки (немає/щодня/щотижня/щомісяця) та аудиторії (усі активні/обрані користувачі) |
+| `Broadcast.get_recipients()` | Повертає queryset отримувачів розсилки залежно від `audience` |
+| `Broadcast.is_due(now)` | Визначає, чи настав час відправити розсилку — для одноразової звіряє `scheduled_at`, для регулярної — правило повторення й `send_time`, з захистом від повторної відправки в межах того самого періоду (`_same_period`) |
 
 ### `users/models.py`
 
@@ -294,13 +318,34 @@ celery -A config worker -l info
 1. **Місячний ліміт** (`Project.dayoff_limit`) — сума вже використаних + обраних у поточній сесії днів у тому самому календарному місяці не може перевищити ліміт
 2. **Ліміт на дату** — спочатку перевіряється `ProjectDateLimit` (перевизначення саме для цієї дати); якщо запису немає — використовується загальний `Project.max_workers_per_day`; якщо й він порожній — обмежень немає
 
-## Email-розсилка
+## Розсилки повідомлень
+
+Django Admin → **Newsletters** (модель `Broadcast`) дозволяє надсилати довільні повідомлення в Telegram усім працівникам, підписаним на бота, без написання коду.
+
+**Отримувачі (`audience`):**
+- «Усі активні користувачі» — всі, кому доступний бот (`is_active=True` і є `telegram_id`)
+- «Обрані користувачі» — ручний вибір конкретних людей через multi-select
+
+**Розклад:**
+- **Одноразово** — `Повторення = Немає`, точна дата й час у `scheduled_at`
+- **Регулярно** — `Щодня` / `Щотижня` (+ день тижня) / `Щомісяця` (+ число місяця; для коротких місяців автоматично «зсувається» на останній день — 31 число в лютому спрацює 28/29-го)
+- Перевірку розкладу виконує `celery-beat` кожні 5 хв (`check_and_send_due_broadcasts`), фактичну відправку — `celery` (`send_broadcast_message`), окремим HTTP-запитом до Telegram Bot API на кожного отримувача (з обробкою `429 Too Many Requests`)
+- Захист від подвійної відправки в межах одного періоду (того самого дня/тижня/місяця) через поле `last_sent_at`
+- Адмін-дія **«📤 Надіслати обрані розсилки зараз»** у списку — негайна відправка, минаючи розклад
+
+**Emoji-пікер:** над текстовим полем — клікабельна панель emoji (кастомний `Textarea`-віджет, чистий JS без зовнішніх залежностей), вставляє символ під курсором.
+
+**Статистика:** після кожної відправки поля `Востаннє надіслано`, `Успішно надіслано`, `Помилок` показують результат.
+
+## Email-розсилка зголошень
 
 Шаблон: `core/templates/core/emails/new_absence_request.html` — HTML-таблична верстка з inline-стилями (для сумісності з поштовими клієнтами), кольоровий статус-бейдж (жовтий/зелений/червоний), польська мова незалежно від мови даних у БД. `EmailMultiAlternatives.attach_alternative(html_body, "text/html")` — лист має і HTML, і plain-text fallback.
 
 ## Локалізація
 
-Підтримувані мови: `uk`, `pl`, `en`, `ru`. Щоб додати нову мову — додати ключ у кожен запис словника `TEXTS` (`bot/locales.py`), у `_WEEKDAYS`/`_MONTHS` (`bot/keyboards/calendar.py`) і в клавіатуру вибору мови (`bot/keyboards/menus.py:language_keyboard()`).
+Підтримувані мови інтерфейсу бота: `uk`, `pl`, `en`, `ru`. Щоб додати нову мову — додати ключ у кожен запис словника `TEXTS` (`bot/locales.py`), у `_WEEKDAYS`/`_MONTHS` (`bot/keyboards/calendar.py`) і в клавіатуру вибору мови (`bot/keyboards/menus.py:language_keyboard()`).
+
+Мова **самого Django Admin** (кнопки «Зберегти», «Домівка» тощо) — окреме налаштування `LANGUAGE_CODE` у `config/settings.py`, ніяк не пов'язане з мовами бота вище.
 
 ## Безпека
 
@@ -326,6 +371,8 @@ celery -A config worker -l info
 | Кнопка в боті «крутиться» без відповіді | Необроблений exception у хендлері — aiogram не викликає `callback.answer()`; дивитись `docker compose logs -f bot` в момент кліку |
 | `SMTPAuthenticationError 535` (Gmail) | Потрібен App Password (2FA), не звичайний пароль; `docker compose up -d --force-recreate` після зміни `.env`, бо `restart` не перечитує змінні |
 | Заблокований користувач досі бачить старе меню | Reply-клавіатура Telegram не оновлюється сама — потрібно надіслати нове повідомлення з новою `reply_markup` (реалізовано в `bot/handlers/start.py`) |
+| Розсилка не пішла, хоча `celery-beat` відпрацював | Для одноразової розсилки перевірте, чи заповнене поле `scheduled_at` — без нього `is_due()` завжди `False`. Або скористайтесь дією «Надіслати зараз» |
+| Emoji-пікер не з'являється в адмінці | Найчастіше — статичні файли не перезібрані: `docker compose exec web python manage.py collectstatic --noinput`, потім жорстке оновлення сторінки в браузері |
 
 ## Дорожня карта
 
@@ -333,3 +380,4 @@ celery -A config worker -l info
 - Пагінація списку зголошень у панелі координатора (зараз ліміт 30 записів)
 - Rate-limiting / anti-flood middleware для aiogram
 - Масовий імпорт Telegram ID (наприклад, з CSV) для швидкого первинного заповнення бази користувачів
+- Мультимовний текст розсилок (окремо для кожної мови отримувача)

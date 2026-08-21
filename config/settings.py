@@ -3,6 +3,8 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from celery.schedules import crontab
+
 load_dotenv()
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -79,7 +81,7 @@ SESSION_COOKIE_AGE = 600  # 10 хвилин
 SESSION_SAVE_EVERY_REQUEST = True
 SESSION_EXPIRE_AT_BROWSER_CLOSE = True
 
-LANGUAGE_CODE = "uk"
+LANGUAGE_CODE = "en-us"
 TIME_ZONE = "Europe/Warsaw"
 USE_I18N = True
 USE_TZ = True
@@ -108,6 +110,12 @@ CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TASK_SERIALIZER = "json"
 CELERY_TIMEZONE = TIME_ZONE
 
+CELERY_BEAT_SCHEDULE = {
+    "check-and-send-due-broadcasts": {
+        "task": "core.tasks.check_and_send_due_broadcasts",
+        "schedule": crontab(minute="*/5"),
+    },
+}
 # ---------------------------------------------------------------------------
 # Email (used by Celery task for project notifications)
 # ---------------------------------------------------------------------------

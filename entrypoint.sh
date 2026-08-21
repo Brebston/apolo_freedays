@@ -16,6 +16,8 @@ elif [ "$1" = "bot" ]; then
   exec python manage.py runbot
 elif [ "$1" = "celery" ]; then
   exec celery -A config worker -l info
+elif [ "$1" = "celery-beat" ]; then
+  exec celery -A config beat -l info
 else
   exec "$@"
 fi
