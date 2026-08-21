@@ -1,12 +1,15 @@
 from django.contrib import admin
 from django.utils import timezone
+from django import forms
 
+from core.admin_widgets import EmojiTextarea
 from core.models import (
     AbsenceRequest,
     Project,
     ProjectDateLimit,
     ProjectEmailRecipient,
     Region,
+    Broadcast,
 )
 from core.tasks import notify_worker_telegram
 from core.models import RequestStatus
@@ -103,3 +106,72 @@ class ProjectDateLimitAdmin(admin.ModelAdmin):
     list_filter = ("project",)
     date_hierarchy = "date"
     search_fields = ("project__name",)
+
+
+class BroadcastAdminForm(forms.ModelForm):
+    class Meta:
+        model = Broadcast
+        fields = "__all__"
+        widgets = {"text": EmojiTextarea()}
+
+
+@admin.register(Broadcast)
+class BroadcastAdmin(admin.ModelAdmin):
+    form = BroadcastAdminForm
+
+    list_display = (
+        "id",
+        "title",
+        "audience",
+        "recurrence",
+        "scheduled_at",
+        "send_time",
+        "is_active",
+        "last_sent_at",
+        "last_sent_count",
+        "last_failed_count",
+    )
+    list_filter = ("audience", "recurrence", "is_active")
+    search_fields = ("title", "text")
+    filter_horizontal = ("specific_users",)
+    readonly_fields = ("last_sent_at", "last_sent_count", "last_failed_count")
+    actions = ["send_now"]
+
+    fieldsets = (
+        (None, {"fields": ("title", "text")}),
+        ("Recipients", {"fields": ("audience", "specific_users")}),
+        (
+            "Schedule",
+            {
+                "fields": (
+                    "recurrence",
+                    "scheduled_at",
+                    "send_time",
+                    "weekday",
+                    "day_of_month",
+                    "is_active",
+                ),
+                "description": (
+                    "For a one-time shipment, leave “Repeat” set to “None” and specify"
+                    "the exact date and time in the “Date and Time of Sending” field. For a regular mailing"
+                    "select the recurrence type and specify the “Sending Time” (+ day of the week/month)."
+                ),
+            },
+        ),
+        (
+            "Statistics for the Last Shipment",
+            {"fields": ("last_sent_at", "last_sent_count", "last_failed_count")},
+        ),
+    )
+
+    @admin.action(description="📤 Send the selected newsletters now")
+    def send_now(self, request, queryset):
+        from core.tasks import send_broadcast_message
+
+        count = 0
+        for broadcast in queryset:
+            send_broadcast_message.delay(broadcast.id)
+            count += 1
+        self.message_user(
+            request, f"Placed in the queue for immediate shipment: {count}"
+        )

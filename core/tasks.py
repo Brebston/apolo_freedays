@@ -1,7 +1,10 @@
 import requests
 
+import time
 
 from celery import shared_task
+
+from django.utils import timezone
 from django.conf import settings
 from django.core.mail import EmailMultiAlternatives
 from django.template.loader import render_to_string
@@ -114,3 +117,63 @@ def notify_worker_telegram(self, request_id: int):
         resp.raise_for_status()
     except requests.RequestException as exc:
         raise self.retry(exc=exc)
+
+
+@shared_task(bind=True, max_retries=3, default_retry_delay=30)
+def send_broadcast_message(self, broadcast_id: int):
+    """
+    Sends a single newsletter to all its recipients via the Telegram Bot API
+    (directly via HTTP, without Aiogram—the Celery task is synchronous).
+    """
+    from core.models import Broadcast
+
+    try:
+        broadcast = Broadcast.objects.get(id=broadcast_id)
+    except Broadcast.DoesNotExist:
+        return
+
+    url = f"https://api.telegram.org/bot{settings.BOT_TOKEN}/sendMessage"
+    sent_count = 0
+    failed_count = 0
+
+    for user in broadcast.get_recipients():
+        payload = {
+            "chat_id": user.telegram_id,
+            "text": broadcast.text,
+            "parse_mode": "HTML",
+        }
+        try:
+            resp = requests.post(url, json=payload, timeout=10)
+            if resp.status_code == 429:
+                retry_after = resp.json().get("parameters", {}).get("retry_after", 1)
+                time.sleep(retry_after)
+                resp = requests.post(url, json=payload, timeout=10)
+            if resp.ok:
+                sent_count += 1
+            else:
+                failed_count += 1
+        except requests.RequestException:
+            failed_count += 1
+        time.sleep(0.05)  # Precautions Against Telegram's Rate Limit
+
+    broadcast.last_sent_at = timezone.now()
+    broadcast.last_sent_count = sent_count
+    broadcast.last_failed_count = failed_count
+    broadcast.save(
+        update_fields=["last_sent_at", "last_sent_count", "last_failed_count"]
+    )
+
+
+@shared_task
+def check_and_send_due_broadcasts():
+    """
+    Periodic task (Celery Beat, every 5 minutes): checks all active
+    mailings and queues those that are due to be sent—
+    both one-time mailings based on `scheduled_at` and recurring mailings based on `recurrence`.
+    """
+    from core.models import Broadcast
+
+    now = timezone.now()
+    for broadcast in Broadcast.objects.filter(is_active=True):
+        if broadcast.is_due(now):
+            send_broadcast_message.delay(broadcast.id)

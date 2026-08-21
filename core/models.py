@@ -1,3 +1,6 @@
+import calendar as cal_module
+
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.conf import settings
 from django.db import models
 
@@ -181,3 +184,152 @@ class AbsenceRequest(models.Model):
     def can_be_rejected(self) -> bool:
         # Deviation is blocked for L4.
         return self.request_type == RequestType.DAYOFF
+
+
+class RecurrenceType(models.TextChoices):
+    NONE = "none”, “None (one-time)"
+    DAILY = "daily", "Daily"
+    WEEKLY = "weekly", "Weekly"
+    MONTHLY = "monthly", "Monthly"
+
+
+class BroadcastAudience(models.TextChoices):
+    ALL = "all", "All active users"
+    SPECIFIC = "specific", "Selected Users"
+
+
+WEEKDAY_CHOICES = [
+    (0, "Monday"),
+    (1, "Tuesday"),
+    (2, "Wednesday"),
+    (3, "Thursday"),
+    (4, "Friday"),
+    (5, "Saturday"),
+    (6, "Sunday"),
+]
+
+
+class Broadcast(models.Model):
+    """
+    The broadcast notifies employees via a Telegram bot—either as a one-time event
+    (scheduled for a specific date and time) or on a recurring basis (daily, weekly, or monthly).
+    The actual sending is performed by the `send_broadcast_message` Celery task,
+    while the check to see if it is time to send is handled by the periodic task
+    `check_and_send_due_broadcasts` (via Celery Beat, every 5 minutes).
+    """
+
+    title = models.CharField(max_length=200, verbose_name="Name (for the admin panel)")
+    text = models.TextField(
+        verbose_name="Message text",
+        help_text=(
+            "Supports emojis and basic Telegram HTML formatting: "
+            "<b>bold</b>, <i>italics</i>"
+        ),
+    )
+
+    audience = models.CharField(
+        max_length=23,
+        choices=BroadcastAudience.choices,
+        default=BroadcastAudience.ALL,
+        verbose_name="Recipients",
+    )
+    specific_users = models.ManyToManyField(
+        settings.AUTH_USER_MODEL,
+        blank=True,
+        related_name="broadcasts",
+        verbose_name="Selected users",
+        help_text="Fill this out only if “Selected users” is selected above.",
+    )
+
+    recurrence = models.CharField(
+        max_length=23,
+        choices=RecurrenceType.choices,
+        default=RecurrenceType.NONE,
+        verbose_name="Repetition",
+    )
+    scheduled_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="Date and time of departure (for a one-time trip)",
+    )
+    send_time = models.TimeField(
+        null=True,
+        blank=True,
+        verbose_name="Departure time (for scheduled flights)",
+    )
+    weekday = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        choices=WEEKDAY_CHOICES,
+        verbose_name="Day of the week (for “Every Week”)",
+    )
+    day_of_month = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(1), MaxValueValidator(31)],
+        verbose_name="Month number (for “Monthly”)",
+        help_text="If a month has fewer days (e.g., 31 in February), it will be sent on the last day of the month.",
+    )
+
+    is_active = models.BooleanField(default=True, verbose_name="Active")
+    last_sent_at = models.DateTimeField(null=True, blank=True, verbose_name="Last sent")
+    last_sent_count = models.PositiveIntegerField(
+        default=0, verbose_name="Sent successfully (last time)"
+    )
+    last_failed_count = models.PositiveIntegerField(
+        default=0, verbose_name="Mistakes (for the last time)"
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Newsletter"
+        verbose_name_plural = "Newsletters"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return self.title
+
+    def get_recipients(self):
+        from users.models import User
+
+        if self.audience == BroadcastAudience.SPECIFIC:
+            return self.specific_users.filter(is_active=True, telegram_id__isnull=False)
+        return User.objects.filter(is_active=True, telegram_id__isnull=False)
+
+    def _same_period(self, last, now):
+        if self.recurrence == RecurrenceType.DAILY:
+            return last.date() == now.date()
+        if self.recurrence == RecurrenceType.WEEKLY:
+            return last.isocalendar()[:2] == now.isocalendar()[:2]
+        if self.recurrence == RecurrenceType.MONTHLY:
+            return (last.year, last.month) == (now.year, now.month)
+        return False
+
+    def is_due(self, now) -> bool:
+        """Is it time to send out this newsletter right now"""
+        if self.recurrence == RecurrenceType.NONE:
+            return (
+                bool(self.scheduled_at)
+                and self.scheduled_at <= now
+                and self.last_sent_at is None
+            )
+
+        if not self.send_time:
+            return False
+        if self.last_sent_at and self._same_period(self.last_sent_at, now):
+            return False
+        if now.time() < self.send_time:
+            return False
+
+        if self.recurrence == RecurrenceType.DAILY:
+            return True
+        if self.recurrence == RecurrenceType.WEEKLY:
+            return self.weekday is not None and now.weekday() == self.weekday
+        if self.recurrence == RecurrenceType.MONTHLY:
+            if self.day_of_month is None:
+                return False
+            last_day = cal_module.monthrange(now.year, now.month)[1]
+            effective_day = min(self.day_of_month, last_day)
+            return now.day == effective_day
+        return False
