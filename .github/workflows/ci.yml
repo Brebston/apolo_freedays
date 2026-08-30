@@ -1,0 +1,105 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  django-checks:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: absence_bot
+          POSTGRES_USER: absence_bot
+          POSTGRES_PASSWORD: absence_bot
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DJANGO_SECRET_KEY: ci-test-secret-key
+      DJANGO_DEBUG: "1"
+      DJANGO_ALLOWED_HOSTS: "*"
+      POSTGRES_DB: absence_bot
+      POSTGRES_USER: absence_bot
+      POSTGRES_PASSWORD: absence_bot
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: 5432
+      REDIS_URL: redis://localhost:6379/0
+      BOT_TOKEN: "123456:CI-fake-token"
+      EMAIL_HOST: smtp.example.com
+      EMAIL_PORT: 587
+      EMAIL_HOST_USER: ci@example.com
+      EMAIL_HOST_PASSWORD: ci-password
+      EMAIL_USE_TLS: "1"
+      DEFAULT_FROM_EMAIL: noreply@example.com
+      SITE_BASE_URL: http://localhost:8000
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Python syntax check (py_compile)
+        run: find . -name "*.py" -not -path "./.venv/*" -print0 | xargs -0 -n1 python -m py_compile
+
+      - name: Django system check
+        run: python manage.py check
+
+      - name: Check for missing migrations
+        run: python manage.py makemigrations users core --check --dry-run
+
+      - name: Apply migrations against test database
+        run: python manage.py migrate --noinput
+
+      - name: Collect static files
+        run: python manage.py collectstatic --noinput
+
+  docker-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -t apolo_freedays:ci .
+
+      - name: Prepare dummy .env for compose validation
+        run: cp .env.example .env
+
+      - name: Validate docker-compose.yml
+        run: docker compose config --quiet
