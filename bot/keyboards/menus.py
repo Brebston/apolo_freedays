@@ -29,6 +29,10 @@ def request_type_keyboard(lang: str):
     builder = InlineKeyboardBuilder()
     builder.button(text=t("btn_dayoff", lang), callback_data="reqtype:dayoff")
     builder.button(text=t("btn_l4", lang), callback_data="reqtype:l4")
+    builder.button(
+        text=t("btn_administration", lang), callback_data="reqtype:administration"
+    )
+    builder.button(text=t("btn_accounting", lang), callback_data="reqtype:accounting")
     builder.button(text=t("btn_cancel", lang), callback_data="reqtype:cancel")
     builder.adjust(1)
     return builder.as_markup()

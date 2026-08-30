@@ -2,9 +2,6 @@
 set -e
 
 if [ "$1" = "migrate" ]; then
-  # The single place where migration files are generated (so that web/bot/celery don't
-  # try to do this simultaneously and race against each other).
-  python manage.py makemigrations users core --noinput
   python manage.py migrate --noinput
   exit 0
 elif [ "$1" = "web" ]; then

@@ -16,7 +16,7 @@ from bot.keyboards.menus import (
 )
 from bot.loader import bot
 from bot.locales import t
-from bot.states import RequestStates
+from bot.states import RequestStates, ServiceRequestStates
 from bot.utils import (
     create_absence_request,
     get_date_capacity_limit,
@@ -61,7 +61,20 @@ async def choose_type(callback: CallbackQuery, state: FSMContext):
         await _cancel_flow(callback, state, lang)
         return
 
+    if action in ("administration", "accounting"):
+        await state.update_data(service_request_type=action)
+        await state.set_state(ServiceRequestStates.entering_text)
+        prompt_key = (
+            "service_request_prompt_administration"
+            if action == "administration"
+            else "service_request_prompt_accounting"
+        )
+        await callback.message.edit_text(t(prompt_key, lang))
+        await callback.answer()
+        return
+
     regions = await get_regions()
+
     if not regions:
         await callback.message.edit_text(t("generic_error", lang))
         await callback.answer()

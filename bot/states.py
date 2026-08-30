@@ -7,3 +7,8 @@ class RequestStates(StatesGroup):
     choosing_project = State()
     choosing_dates = State()
     confirming = State()
+
+
+class ServiceRequestStates(StatesGroup):
+    entering_text = State()
+    confirming = State()

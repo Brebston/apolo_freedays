@@ -310,6 +310,54 @@ TEXTS = {
         "en": "⚠️ An error occurred. Please try again later.",
         "ru": "⚠️ Произошла ошибка. Попробуйте позже.",
     },
+    "btn_administration": {
+        "uk": "📄 Зголошення до адміністрації",
+        "pl": "📄 Zgłoszenie do administracji",
+        "en": "📄 Request to administration",
+        "ru": "📄 Обращение к администрации",
+    },
+    "btn_accounting": {
+        "uk": "💰 Зголошення до бухгалтерії",
+        "pl": "💰 Zgłoszenie do księgowości",
+        "en": "💰 Request to accounting",
+        "ru": "💰 Обращение в бухгалтерию",
+    },
+    "service_request_prompt_administration": {
+        "uk": "Опишіть, які документи вам потрібні (наприклад: довідка про страхування, załącznik тощо). Напишіть повідомлення нижче (щоб скасувати — надішліть /start):",
+        "pl": "Opisz, jakie dokumenty są Ci potrzebne (np. zaświadczenie o ubezpieczeniu, załącznik itd.). Napisz wiadomość poniżej (aby anulować — wyślij /start):",
+        "en": "Describe which documents you need (e.g. insurance certificate, an attachment/załącznik, etc.). Type your message below (send /start to cancel):",
+        "ru": "Опишите, какие документы вам нужны (например: справка о страховке, załącznik и т.д.). Напишите сообщение ниже (чтобы отменить — отправьте /start):",
+    },
+    "service_request_prompt_accounting": {
+        "uk": "Опишіть ваше питання щодо зарплати чи невідповідності. Напишіть повідомлення нижче (щоб скасувати — надішліть /start):",
+        "pl": "Opisz swoje pytanie dotyczące wynagrodzenia lub niezgodności. Napisz wiadomość poniżej (aby anulować — wyślij /start):",
+        "en": "Describe your question about salary or a discrepancy. Type your message below (send /start to cancel):",
+        "ru": "Опишите ваш вопрос по зарплате или несоответствию. Напишите сообщение ниже (чтобы отменить — отправьте /start):",
+    },
+    "service_request_empty": {
+        "uk": "⚠️ Повідомлення не може бути порожнім. Спробуйте ще раз:",
+        "pl": "⚠️ Wiadomość nie może być pusta. Spróbuj ponownie:",
+        "en": "⚠️ The message cannot be empty. Try again:",
+        "ru": "⚠️ Сообщение не может быть пустым. Попробуйте снова:",
+    },
+    "service_request_confirm": {
+        "uk": "Перевірте деталі зголошення:\n\nТип: {type}\nТекст: {text}",
+        "pl": "Sprawdź szczegóły zgłoszenia:\n\nTyp: {type}\nTreść: {text}",
+        "en": "Please review the request details:\n\nType: {type}\nText: {text}",
+        "ru": "Проверьте детали заявки:\n\nТип: {type}\nТекст: {text}",
+    },
+    "service_request_item": {
+        "uk": "• {type} | {text} | Статус: {status}",
+        "pl": "• {type} | {text} | Status: {status}",
+        "en": "• {type} | {text} | Status: {status}",
+        "ru": "• {type} | {text} | Статус: {status}",
+    },
+    "service_request_decided_worker": {
+        "uk": "🔔 Ваше зголошення {status}.\nТип: {type}\nТекст: {text}",
+        "pl": "🔔 Twoje zgłoszenie: {status}.\nTyp: {type}\nTreść: {text}",
+        "en": "🔔 Your request has been {status}.\nType: {type}\nText: {text}",
+        "ru": "🔔 Ваша заявка: {status}.\nТип: {type}\nТекст: {text}",
+    },
 }
 
 

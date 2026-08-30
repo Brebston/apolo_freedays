@@ -177,3 +177,125 @@ def check_and_send_due_broadcasts():
     for broadcast in Broadcast.objects.filter(is_active=True):
         if broadcast.is_due(now):
             send_broadcast_message.delay(broadcast.id)
+
+
+@shared_task(bind=True, max_retries=3, default_retry_delay=30)
+def send_service_request_email(self, service_request_id: int):
+    """
+    Sends an email notification about a new submission to the
+    administration/accounting department, featuring clickable
+    "Accept" and "Reject" buttons directly in the message—the
+    links point to a public Django view secured by a unique
+    `decision_token` (no login required).
+    """
+    from core.models import (
+        DepartmentResponsiblePerson,
+        EmailRecipientType,
+        ServiceRequest,
+    )
+
+    try:
+        sr = ServiceRequest.objects.select_related("user").get(id=service_request_id)
+    except ServiceRequest.DoesNotExist:
+        return
+
+    recipients = DepartmentResponsiblePerson.objects.filter(
+        department=sr.request_type
+    ).select_related("user")
+    to_list = [
+        r.user.email
+        for r in recipients
+        if r.recipient_type == EmailRecipientType.TO and r.user.email
+    ]
+    cc_list = [
+        r.user.email
+        for r in recipients
+        if r.recipient_type == EmailRecipientType.CC and r.user.email
+    ]
+
+    if not to_list:
+        return
+
+    base_url = settings.SITE_BASE_URL.rstrip("/")
+    approve_url = f"{base_url}/requests/{sr.decision_token}/approve/"
+    reject_url = f"{base_url}/requests/{sr.decision_token}/reject/"
+
+    type_label_pl = (
+        "Zgłoszenie do administracji"
+        if sr.request_type == "administration"
+        else "Zgłoszenie do księgowości"
+    )
+
+    context = {
+        "worker_name": f"{sr.user.last_name} {sr.user.first_name}",
+        "worker_email": sr.user.email,
+        "worker_phone": sr.user.phone,
+        "type_label": type_label_pl,
+        "text": sr.text,
+        "approve_url": approve_url,
+        "reject_url": reject_url,
+    }
+    html_body = render_to_string("core/emails/new_service_request.html", context)
+
+    subject = f"Nowe zgłoszenie: {type_label_pl}"
+    text_body = (
+        f"Pracownik: {sr.user.last_name} {sr.user.first_name}\n"
+        f"Email: {sr.user.email}\n"
+        f"Rodzaj: {type_label_pl}\n"
+        f"Treść: {sr.text}\n\n"
+        f"Zaakceptuj: {approve_url}\n"
+        f"Odrzuć: {reject_url}\n"
+    )
+
+    try:
+        email = EmailMultiAlternatives(
+            subject=subject,
+            body=text_body,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            to=to_list,
+            cc=cc_list or None,
+        )
+        email.attach_alternative(html_body, "text/html")
+        email.send(fail_silently=False)
+    except Exception as exc:  # noqa: BLE001
+        raise self.retry(exc=exc)
+
+
+@shared_task(bind=True, max_retries=3, default_retry_delay=30)
+def notify_service_request_decision(self, service_request_id: int):
+    """Push notification to the employee via Telegram following a decision on the submission (via email)."""
+    import requests
+
+    from bot.locales import t
+    from core.models import ServiceRequest
+
+    try:
+        sr = ServiceRequest.objects.select_related("user").get(id=service_request_id)
+    except ServiceRequest.DoesNotExist:
+        return
+
+    if not sr.user.telegram_id:
+        return
+
+    lang = sr.user.language
+    type_label = (
+        t("btn_administration", lang)
+        if sr.request_type == "administration"
+        else t("btn_accounting", lang)
+    )
+    status_label = t(f"status_{sr.status}", lang)
+    text = t(
+        "service_request_decided_worker",
+        lang,
+        status=status_label,
+        type=type_label,
+        text=sr.text,
+    )
+
+    url = f"https://api.telegram.org/bot{settings.BOT_TOKEN}/sendMessage"
+    try:
+        requests.post(
+            url, json={"chat_id": sr.user.telegram_id, "text": text}, timeout=10
+        )
+    except requests.RequestException as exc:
+        raise self.retry(exc=exc)

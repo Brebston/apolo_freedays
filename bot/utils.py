@@ -99,6 +99,45 @@ def create_absence_request(
 
 
 @sync_to_async
+def create_service_request(user_id: int, request_type: str, text: str):
+    from core.models import ServiceRequest
+
+    return ServiceRequest.objects.create(
+        user_id=user_id, request_type=request_type, text=text
+    )
+
+
+@sync_to_async
+def get_my_all_requests(user_id: int, limit: int = 20):
+    """
+    Combines AbsenceRequest (time off/L4) and ServiceRequest
+    (administration/accounting) into a single list sorted by
+    creation date for the "My Requests" section. A `.kind`
+    attribute ("absence" or "service") is added to each object
+    so the handler knows how to render it.
+    """
+    from core.models import AbsenceRequest, ServiceRequest
+
+    absence = list(
+        AbsenceRequest.objects.select_related("project")
+        .filter(user_id=user_id)
+        .order_by("-created_at")[:limit]
+    )
+    for r in absence:
+        r.kind = "absence"
+
+    service = list(
+        ServiceRequest.objects.filter(user_id=user_id).order_by("-created_at")[:limit]
+    )
+    for r in service:
+        r.kind = "service"
+
+    combined = absence + service
+    combined.sort(key=lambda r: r.created_at, reverse=True)
+    return combined[:limit]
+
+
+@sync_to_async
 def get_used_dayoff_days_in_month(
     user_id: int,
     project_id: int,
