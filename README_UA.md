@@ -1,8 +1,8 @@
 # apolo_freedays
 
-Telegram-бот та Django Admin для обліку відсутностей працівників польської агенції праці: подання, модерація й автоматичне сповіщення про вихідні дні та лікарняні (L4).
+Telegram-бот та Django Admin для обліку відсутностей працівників польської агенції праці: подання, модерація й автоматичне сповіщення про вихідні дні, лікарняні (L4), а також зголошення до адміністрації та бухгалтерії.
 
-**Стек:** Python 3.12 · Django 5 · aiogram 3.x · PostgreSQL · Celery + Celery Beat + Redis · Docker Compose
+**Стек:** Python 3.12 · Django 5 · aiogram 3.x · PostgreSQL · Celery + Celery Beat + Redis · Docker Compose · GitHub Actions CI
 
 ---
 
@@ -20,8 +20,11 @@ Telegram-бот та Django Admin для обліку відсутностей �
 - [Бізнес-логіка бота (флоу)](#бізнес-логіка-бота-флоу)
 - [Доступ до бота](#доступ-до-бота)
 - [Ліміти вихідних](#ліміти-вихідних)
+- [Зголошення до адміністрації/бухгалтерії](#зголошення-до-адміністраціїбухгалтерії)
 - [Розсилки повідомлень](#розсилки-повідомлень)
 - [Email-розсилка зголошень](#email-розсилка-зголошень)
+- [Міграції бази даних](#міграції-бази-даних)
+- [Continuous Integration (CI)](#continuous-integration-ci)
 - [Локалізація](#локалізація)
 - [Безпека](#безпека)
 - [Розробка (hot-reload)](#розробка-hot-reload)
@@ -37,18 +40,19 @@ Telegram-бот та Django Admin для обліку відсутностей �
 1. **Telegram-бот** (`aiogram 3.x`) — інтерфейс для працівників (подача зголошень) і координаторів (модерація).
 2. **Django Admin** — вебпанель для суперадміна: керування регіонами, проєктами, лімітами, доступом користувачів, email-розсилками та довільними розсилками повідомлень у Telegram.
 
-Бот звертається до Django ORM напряму (обгорнутий у `sync_to_async`), без окремого REST API — обидва компоненти живуть в одному Django-проєкті й діляться моделями.
+Бот звертається до Django ORM напряму (обгорнутий у `sync_to_async`), без окремого REST API — обидва компоненти живуть в одному Django-проєкті й діляться моделями. Окремо є один публічний (без логіну) URL — `/requests/<token>/<approve|reject>/` — для прийняття рішень по зголошеннях до адміністрації/бухгалтерії прямо з email.
 
 **Важливо:** самостійної реєстрації в боті немає. Доступ видається виключно адміністратором через Django Admin — за Telegram ID.
 
 ## Архітектура
 
 ```
-┌─────────────┐      ┌──────────────┐      ┌─────────────┐
-│  Telegram   │◄────►│bot (aiogram) │      │web (gunicorn)│
-│  API        │      │long polling  │      │Django Admin  │
-└─────────────┘      └──────┬───────┘      └──────┬──────┘
-                            │  Django ORM (sync_to_async)  
+┌─────────────┐      ┌──────────────┐      ┌───────────────┐
+│ Telegram    │◄────►│bot (aiogram) │      │ web (gunicorn)│
+│ API         │      │long polling  │      │ Django Admin +│
+└─────────────┘      └──────┬───────┘      │ /requests/... │
+                            │              └──────┬────────┘
+                            │     Django ORM (sync_to_async)  
                             ▼                     ▼
                       ┌─────────────────────────────────────┐
                       │           PostgreSQL (db)           │
@@ -56,9 +60,9 @@ Telegram-бот та Django Admin для обліку відсутностей �
                              ▲                    ▲
                              │ .delay()           │ читає розклад
                       ┌──────┴───────┐      ┌──────┴───────┐
-                      │ celery worker│◄────►│ celery-beat  │
-                      │ email + push-│      │(планувальник,│
-                      │ розсилки     │      │ кожні 5 хв)  │
+                      │celery worker │◄────►│ celery-beat  │
+                      │email + push- │      │(планувальник,│
+                      │розсилки      │      │ кожні 5 хв)  │
                       └──────┬───────┘      └──────────────┘
                              │
                       ┌──────┴───────┐
@@ -66,43 +70,50 @@ Telegram-бот та Django Admin для обліку відсутностей �
                       └──────────────┘
 ```
 
-Сервіси в `docker-compose.yml`: `db`, `redis`, `migrate` (одноразовий, генерує й накатує міграції перед стартом решти), `web`, `bot`, `celery`, `celery-beat`. Порядок старту контролюється через `depends_on: condition: service_healthy / service_completed_successfully`.
+Сервіси в `docker-compose.yml`: `db`, `redis`, `migrate` (одноразовий, накочує заздалегідь згенеровані й закомічені в репозиторії міграції перед стартом решти), `web`, `bot`, `celery`, `celery-beat`. Порядок старту контролюється через `depends_on: condition: service_healthy / service_completed_successfully`.
 
 ## Структура проєкту
 
 ```
-config/                     Django settings (+ CELERY_BEAT_SCHEDULE), celery.py, urls.py, wsgi.py
+.github/workflows/
+  ci.yml                     GitHub Actions: Django-перевірки + збірка Docker-образу
+config/                      Django settings (+ CELERY_BEAT_SCHEDULE, SITE_BASE_URL), celery.py, urls.py, wsgi.py
 users/
-  models.py                 Кастомна модель User (AbstractUser + telegram_id, мова)
-  forms.py                  Кастомна форма створення користувача в Django Admin
-                             (без username, пароль необов'язковий)
-  admin.py                  UserAdmin
+  models.py                  Кастомна модель User (AbstractUser + telegram_id, мова)
+  forms.py                   Кастомна форма створення користувача в Django Admin
+                              (без username, пароль необов'язковий)
+  admin.py                   UserAdmin
 core/
-  models.py                 Region, Project, ProjectDateLimit, ProjectEmailRecipient,
-                             AbsenceRequest, Broadcast (розсилки повідомлень)
-  admin.py                  Django Admin для всіх сутностей проєкту
-  admin_widgets.py          Кастомний Textarea-віджет з emoji-пікером
-  tasks.py                  Celery-таски: email-розсилка зголошень (HTML, польська),
-                             відправка й перевірка розсилок повідомлень
-  static/core/admin/        CSS/JS emoji-пікера для Django Admin (без зовнішніх залежностей)
-  templates/core/emails/    HTML-шаблон листа
+  models.py                  Region, Project, ProjectDateLimit, ProjectEmailRecipient,
+                              AbsenceRequest, Broadcast, ServiceRequest,
+                              DepartmentResponsiblePerson
+  admin.py                   Django Admin для всіх сутностей проєкту
+  admin_widgets.py           Кастомний Textarea-віджет з emoji-пікером
+  views.py                   Публічний view для рішень по зголошеннях (з email, за токеном)
+  tasks.py                   Celery-таски: email-розсилка зголошень (HTML, польська),
+                              розсилки повідомлень, email/push для зголошень до адмін./бухгалтерії
+  static/core/admin/         CSS/JS emoji-пікера для Django Admin (без зовнішніх залежностей)
+  templates/core/
+    emails/                  HTML-шаблони листів
+    service_request_decision.html   Сторінка підтвердження рішення (відкривається з email)
 bot/
-  loader.py                 Інстанси Bot і Dispatcher (aiogram)
-  states.py                 FSM-стани подання зголошення
-  locales.py                Словник перекладів + функція t()
-  filters.py                Кастомний aiogram-фільтр TextIs
-  utils.py                  Усі звернення до Django ORM (sync_to_async-обгортки)
+  loader.py                  Інстанси Bot і Dispatcher (aiogram)
+  states.py                  FSM-стани подання зголошень (включно з текстовими)
+  locales.py                 Словник перекладів + функція t()
+  filters.py                 Кастомний aiogram-фільтр TextIs
+  utils.py                   Усі звернення до Django ORM (sync_to_async-обгортки)
   keyboards/
-    menus.py                Reply/inline-клавіатури головного меню, вибору типу/регіону/проєкту
-    calendar.py             Інтерактивний локалізований календар вибору дат
-    inline.py                Клавіатури рішень координатора, панелі та відмови в доступі
+    menus.py                 Reply/inline-клавіатури головного меню, вибору типу/регіону/проєкту
+    calendar.py              Інтерактивний локалізований календар вибору дат
+    inline.py                 Клавіатури рішень координатора, панелі та відмови в доступі
   handlers/
-    start.py                /start, вибір мови, перевірка доступу за Telegram ID
-    request_flow.py         Подання зголошення (тип → регіон → проєкт → дати → підтвердження)
-    cabinet.py               Кабінет працівника (мої зголошення, контакти координаторів)
-    coordinator.py          Панель координатора, рішення по зголошенню
+    start.py                 /start, вибір мови, перевірка доступу за Telegram ID
+    request_flow.py          Подання зголошення (тип → регіон → проєкт → дати → підтвердження)
+    service_request_flow.py  Подання зголошення до адміністрації/бухгалтерії (вільний текст)
+    cabinet.py                Кабінет працівника (мої зголошення — обидва типи, контакти координаторів)
+    coordinator.py           Панель координатора, рішення по зголошенню
   management/commands/
-    runbot.py                Django management command: запуск aiogram polling
+    runbot.py                 Django management command: запуск aiogram polling
 ```
 
 ## Функціональні можливості
@@ -125,17 +136,19 @@ bot/
 - **Місячний ліміт вихідних на проєкт** — сумарна кількість вихідних працівника по проєкту за календарний місяць, а не лише за одне зголошення
 - **Ліміт працівників на дату** — скільки людей одночасно можуть бути на вихідному в один день, окремо на проєкт
 - **Перевизначення ліміту для конкретної дати** (`ProjectDateLimit`) — наприклад, 05.08 → 2 особи, 06.08 → 5 осіб, з фолбеком на загальний ліміт проєкту
+- **Зголошення до адміністрації та бухгалтерії** — окремі типи зголошень (вільний текст, без дат/проєкту), де рішення «Прийняти/Відхилити» ухвалюється **прямо в email**, а не в боті
 - **Розсилки повідомлень працівникам** через Django Admin — одноразові (конкретна дата й час) або регулярні (щодня/щотижня/щомісяця, наприклад «1-го числа кожного місяця»), з вибором аудиторії та вбудованим emoji-пікером
 - **HTML-лист польською мовою** з кольоровим статус-бейджем замість простого тексту
 - **Автоматичне вилогування з Django Admin** за 10 хв неактивності
 - **WhiteNoise** для роздачі статики адмінки без окремого nginx
 - **Health check + одноразовий migrate-сервіс** у Docker Compose, що усуває гонитву умов при першому старті
+- **CI на GitHub Actions** — автоматичні перевірки на кожен push/PR
 
 ## Швидкий старт (Docker)
 
 ```bash
 cp .env.example .env
-# заповніть BOT_TOKEN, POSTGRES_*, EMAIL_* (див. розділ "Змінні середовища")
+# заповніть BOT_TOKEN, POSTGRES_*, EMAIL_*, SITE_BASE_URL (див. розділ "Змінні середовища")
 
 docker compose up --build
 docker compose exec web python manage.py createsuperuser
@@ -144,7 +157,7 @@ docker compose exec web python manage.py createsuperuser
 Django Admin: http://localhost:8000/admin/
 Бот: напишіть йому `/start` у Telegram — доки ваш Telegram ID не додано в Django Admin, бот покаже повідомлення про відсутність доступу.
 
-Порядок старту повністю автоматичний: `db`/`redis` → healthy, `migrate` генерує та накатує міграції, потім стартують `web`/`bot`/`celery`/`celery-beat`.
+Порядок старту повністю автоматичний: `db`/`redis` → healthy, `migrate` накочує заздалегідь закомічені міграції, потім стартують `web`/`bot`/`celery`/`celery-beat`.
 
 ## Локальний запуск без Docker
 
@@ -177,6 +190,7 @@ celery -A config beat -l info
 | `BOT_TOKEN` | Токен від [@BotFather](https://t.me/BotFather) |
 | `EMAIL_HOST/PORT/HOST_USER/HOST_PASSWORD/USE_TLS` | SMTP (для Gmail — обов'язково App Password, не звичайний пароль) |
 | `DEFAULT_FROM_EMAIL` | Адреса відправника |
+| `SITE_BASE_URL` | Публічна адреса сайту (напр. `https://bot.yourdomain.com`) — використовується для побудови кнопок «Прийняти/Відхилити» в email-листах зголошень до адмін./бухгалтерії |
 
 ## Django Admin — сутності
 
@@ -187,7 +201,9 @@ celery -A config beat -l info
 | **Projects** | Назва, регіон, `dayoff_limit` (місячний ліміт днів), `max_workers_per_day` (ліміт на дату, порожньо = без обмежень), `coordinators` (M2M), inline-списки email-отримувачів і перевизначень лімітів на дату |
 | **ProjectDateLimit** | Перевизначення ліміту працівників для конкретної дати конкретного проєкту |
 | **ProjectEmailRecipient** | Email-адреси отримувачів проєкту з типом To/CC |
-| **AbsenceRequest** | Журнал усіх зголошень з фільтрами за статусом/типом/проєктом/датою |
+| **AbsenceRequest** | Журнал усіх зголошень (вихідні/L4) з фільтрами за статусом/типом/проєктом/датою |
+| **ServiceRequest** | Зголошення до адміністрації/бухгалтерії: текст, статус, унікальний `decision_token` для рішення з email |
+| **DepartmentResponsiblePerson** | Хто отримує email по зголошеннях до конкретного відділу (Адміністрація/Бухгалтерія) — обирається профіль `User`, а не довільна адреса |
 | **Broadcast** (Newsletters) | Розсилки повідомлень працівникам у Telegram: текст (з emoji-пікером), аудиторія, розклад (одноразовий/регулярний), статистика останньої відправки |
 
 ## Довідник кастомних функцій
@@ -206,12 +222,14 @@ celery -A config beat -l info
 | `get_coordinators_by_region(region_id)` | Усі координатори проєктів у регіоні (для розділу «Контакти») |
 | `get_coordinator_project_ids(user_id)` | ID проєктів, за якими закріплений координатор |
 | `create_absence_request(user_id, project_id, request_type, dates)` | Створює `AbsenceRequest`, зберігаючи повний список дат у полі `dates` (не лише start/end) |
+| `create_service_request(user_id, request_type, text)` | Створює `ServiceRequest` (зголошення до адміністрації/бухгалтерії) |
 | `get_used_dayoff_days_in_month(user_id, project_id, year, month, exclude_request_id=None)` | Скільки вихідних працівник уже використав по проєкту в календарному місяці (по всіх заявках, крім відхилених) — основа **місячного ліміту** |
 | `get_workers_count_on_date(project_id, iso_date)` | Скільки УНІКАЛЬНИХ працівників проєкту вже мають вихідний на конкретну дату — основа **ліміту на дату** |
 | `get_date_capacity_limit(project_id, iso_date)` | Повертає перевизначений ліміт з `ProjectDateLimit` для дати, або `None`, якщо перевизначення немає (тоді діє загальний ліміт проєкту) |
-| `get_request(request_id)` | Зголошення з підвантаженими user/project/region |
-| `decide_request(request_id, status, decided_by_id)` | Атомарно змінює статус (лише якщо він ще `pending`), повертає `(request, changed: bool)` |
-| `get_my_requests(user_id)` | Останні 20 зголошень працівника |
+| `get_request(request_id)` | Зголошення (вихідний/L4) з підвантаженими user/project/region |
+| `decide_request(request_id, status, decided_by_id)` | Атомарно змінює статус `AbsenceRequest` (лише якщо він ще `pending`), повертає `(request, changed: bool)` |
+| `get_my_requests(user_id)` | Останні 20 зголошень працівника — лише `AbsenceRequest` (застаріла, замінена на `get_my_all_requests`) |
+| `get_my_all_requests(user_id, limit=20)` | Об'єднує `AbsenceRequest` і `ServiceRequest` в один список за датою створення; кожному об'єкту додається атрибут `.kind` (`"absence"`/`"service"`) для правильного рендерингу |
 | `get_project_requests(project_ids, status_filter)` | Зголошення по проєктах координатора з фільтром «Усі/Нові/Опрацьовані» |
 | `save_notification_message_id(request_id, coordinator_telegram_id, message_id)` | Зберігає ID надісланого push-повідомлення (для можливого подальшого редагування) |
 
@@ -226,6 +244,12 @@ celery -A config beat -l info
 | Об'єкт | Опис |
 |---|---|
 | `EmojiTextarea` | Кастомний `forms.Textarea` з клікабельною панеллю emoji над полем (в Django Admin). Підключає CSS/JS через `Media`, без зовнішніх бібліотек — файли лежать у `core/static/core/admin/emoji_picker.{css,js}`. Клік по emoji вставляє символ під курсором у текстове поле |
+
+### `core/views.py`
+
+| Функція | Опис |
+|---|---|
+| `decide_service_request(request, token, action)` | Публічний (без логіну) view для кнопок «Прийняти»/«Відхилити» з email. `GET` показує сторінку підтвердження, `POST` фактично змінює статус — так email-сканери/попереднє завантаження посилань поштовими клієнтами не тригерять рішення випадково. Ідемпотентний: повторний клік після рішення показує «вже опрацьовано» |
 
 ### `bot/locales.py`
 
@@ -253,10 +277,10 @@ celery -A config beat -l info
 | `language_keyboard()` | Вибір мови (4 кнопки) — перший крок на кожному `/start` |
 | `main_menu_keyboard(lang, is_staff)` | Головне reply-меню; кнопка «Панель координатора» лише якщо `is_staff=True` |
 | `no_access_reply_keyboard(lang)` | Урізане reply-меню для користувача без доступу — лише кнопка «🌐 Мова» |
-| `request_type_keyboard(lang)` | «Вихідний день» / «Лікарняний (L4)» / «Скасувати» |
+| `request_type_keyboard(lang)` | «Вихідний день» / «Лікарняний (L4)» / «Зголошення до адміністрації» / «Зголошення до бухгалтерії» / «Скасувати» |
 | `regions_keyboard(regions)` / `projects_keyboard(projects)` | Динамічні списки з БД |
-| `confirm_keyboard(lang)` | «Підтвердити» / «Скасувати» |
-| `decision_keyboard(request_id, lang, can_reject=True)` | Кнопки рішення координатора; кнопка «Відхилити» відсутня, якщо `can_reject=False` (L4) |
+| `confirm_keyboard(lang)` | «Підтвердити» / «Скасувати» — спільна для всіх типів зголошень |
+| `decision_keyboard(request_id, lang, can_reject=True)` | Кнопки рішення координатора (лише для вихідних/L4); кнопка «Відхилити» відсутня, якщо `can_reject=False` (L4) |
 | `coordinator_panel_keyboard(lang)` | Фільтри «Усі/Нові/Опрацьовані» |
 | `requests_list_keyboard(requests)` | Список зголошень для панелі координатора |
 | `no_access_keyboard(lang)` | Inline-кнопка «🆔 Дізнатися свій Telegram ID» при відмові в доступі |
@@ -267,6 +291,8 @@ celery -A config beat -l info
 |---|---|
 | `send_absence_request_email(self, request_id)` | Celery-таска (bind=True, до 3 повторних спроб): рендерить HTML-шаблон польською, формує plain-text fallback, надсилає на всіх To/CC отримувачів проєкту |
 | `_STATUS_LABELS_PL`, `_TYPE_LABELS_PL` | Мапи статус/тип → польська мітка + колір бейджа (незалежно від мови даних у БД — лист завжди польською) |
+| `send_service_request_email(self, service_request_id)` | Celery-таска: надсилає email про зголошення до адмін./бухгалтерії з клікабельними кнопками «Прийняти»/«Відхилити», що ведуть на `decide_service_request` з унікальним токеном |
+| `notify_service_request_decision(self, service_request_id)` | Celery-таска: push-сповіщення працівнику в Telegram після рішення, ухваленого через email |
 | `send_broadcast_message(self, broadcast_id)` | Celery-таска (bind=True, до 3 повторних спроб): надсилає одну розсилку всім її отримувачам через Telegram Bot API (напряму HTTP-запитом, з обробкою rate-limit 429), оновлює статистику (`last_sent_at`, `last_sent_count`, `last_failed_count`) |
 | `check_and_send_due_broadcasts()` | Періодична Celery Beat-таска (кожні 5 хв): перевіряє всі активні розсилки й ставить у чергу ті, чий час (за розкладом чи повторенням) настав |
 
@@ -281,7 +307,11 @@ celery -A config beat -l info
 | `AbsenceRequest.dates` | `JSONField` з повним списком обраних ISO-дат — потрібен для точного підрахунку місячного ліміту при негрупових вибірках днів |
 | `RecurrenceType`, `BroadcastAudience` | `TextChoices` для типу повторення розсилки (немає/щодня/щотижня/щомісяця) та аудиторії (усі активні/обрані користувачі) |
 | `Broadcast.get_recipients()` | Повертає queryset отримувачів розсилки залежно від `audience` |
-| `Broadcast.is_due(now)` | Визначає, чи настав час відправити розсилку — для одноразової звіряє `scheduled_at`, для регулярної — правило повторення й `send_time`, з захистом від повторної відправки в межах того самого періоду (`_same_period`) |
+| `Broadcast.is_due(now)` | Визначає, чи настав час відправити розсилку, з захистом від повторної відправки в межах того самого періоду (`_same_period`) |
+| `RequestDepartment` | `TextChoices` — Адміністрація / Бухгалтерія |
+| `generate_decision_token()` | Генерує криптографічно випадковий токен (`secrets.token_urlsafe(32)`) для `ServiceRequest.decision_token` — непідбірне посилання рішення в email |
+| `ServiceRequest` | Зголошення до адмін./бухгалтерії: вільний текст, статус, `decision_token`, без прив'язки до проєкту/дат |
+| `DepartmentResponsiblePerson` | Хто (профіль `User`) отримує email для конкретного відділу, з типом To/CC |
 
 ### `users/models.py`
 
@@ -297,8 +327,11 @@ celery -A config beat -l info
    - **Не знайдено АБО `is_active=False`** → повідомлення «немає доступу» з inline-кнопкою «🆔 Дізнатися свій Telegram ID» + reply-меню урізається лише до кнопки «🌐 Мова»
 3. **«Дізнатися свій Telegram ID»** → бот надсилає готовий текст-шаблон з ID користувача — просто переслати координатору
 4. **Видача доступу**: адміністратор/координатор у **Django Admin → Users → Add user** вказує Telegram ID (та ім'я/прізвище) — цього достатньо, решта полів необов'язкові
-5. **Подання зголошення**: тип → регіон → проєкт (тут-таки читаються ліміти) → календар (кожен тап на дату перевіряє місячний ліміт і ліміт на дату/перевизначення) → картка підтвердження → `create_absence_request()` → email + push усім координаторам проєкту з inline-кнопками рішення
-6. **Рішення координатора**: спрацьовує однаково і з push-повідомлення, і з панелі координатора; для L4 кнопка «Відхилити» відсутня на рівні клавіатури й додатково заблокована на рівні хендлера
+5. **Подання зголошення**: тип (вихідний / L4 / до адміністрації / до бухгалтерії)
+   - Вихідний/L4 → регіон → проєкт → календар → картка підтвердження → email + push усім координаторам проєкту з inline-кнопками рішення
+   - До адміністрації/бухгалтерії → вільний текст → картка підтвердження → email відповідальній особі з кнопками рішення прямо в листі
+6. **Рішення координатора** (вихідні/L4): спрацьовує однаково і з push-повідомлення, і з панелі координатора; для L4 кнопка «Відхилити» відсутня на рівні клавіатури й додатково заблокована на рівні хендлера
+7. **Рішення по зголошенню до адмін./бухгалтерії**: ухвалюється кліком по кнопці в email → сторінка підтвердження → push працівнику зі статусом
 
 ## Доступ до бота
 
@@ -317,6 +350,20 @@ celery -A config beat -l info
 
 1. **Місячний ліміт** (`Project.dayoff_limit`) — сума вже використаних + обраних у поточній сесії днів у тому самому календарному місяці не може перевищити ліміт
 2. **Ліміт на дату** — спочатку перевіряється `ProjectDateLimit` (перевизначення саме для цієї дати); якщо запису немає — використовується загальний `Project.max_workers_per_day`; якщо й він порожній — обмежень немає
+
+## Зголошення до адміністрації/бухгалтерії
+
+Третій і четвертий тип у «➕ Подати зголошення» — замовлення документів в адміністрації (наприклад, довідка про страхування, załącznik) і питання до бухгалтерії (зарплата, невідповідності). На відміну від вихідних/L4 — без вибору проєкту/дат, лише вільний текст.
+
+**Флоу:**
+1. Працівник обирає «📄 Зголошення до адміністрації» чи «💰 Зголошення до бухгалтерії» на тому самому екрані вибору типу
+2. Бот просить описати запит текстом → картка підтвердження → створюється `ServiceRequest`
+3. Email іде відповідальній особі відділу (`DepartmentResponsiblePerson`, налаштовується в Django Admin — обирається реальний профіль `User`, а не довільна адреса, тож email завжди актуальний)
+4. **Рішення ухвалюється прямо в email** — дві клікабельні кнопки («✅ Zaakceptuj» / «❌ Odrzuć») ведуть на публічний, захищений токеном Django-view
+5. Клік відкриває сторінку підтвердження (`GET`) — сама зміна статусу відбувається лише на наступному `POST`, це захищає від випадкового спрацювання через попереднє завантаження посилань поштовими клієнтами (Outlook Safe Links тощо)
+6. Після підтвердження працівник миттєво отримує push у Telegram зі статусом і деталями, а запис оновлюється в «📋 Мої зголошення» (в одному списку з вихідними/L4)
+
+**Безпека посилання рішення:** кожен `ServiceRequest` отримує випадковий 32-байтовий токен (`secrets.token_urlsafe(32)`) як `decision_token` — непідбірний, а view перевіряє, що статус ще `pending`, перш ніж прийняти рішення (ідемпотентно, неможливо обробити двічі).
 
 ## Розсилки повідомлень
 
@@ -339,7 +386,30 @@ Django Admin → **Newsletters** (модель `Broadcast`) дозволяє н�
 
 ## Email-розсилка зголошень
 
-Шаблон: `core/templates/core/emails/new_absence_request.html` — HTML-таблична верстка з inline-стилями (для сумісності з поштовими клієнтами), кольоровий статус-бейдж (жовтий/зелений/червоний), польська мова незалежно від мови даних у БД. `EmailMultiAlternatives.attach_alternative(html_body, "text/html")` — лист має і HTML, і plain-text fallback.
+Шаблон: `core/templates/core/emails/new_absence_request.html` — HTML-таблична верстка з inline-стилями (для сумісності з поштовими клієнтами), кольоровий статус-бейдж (жовтий/зелений/червоний), польська мова незалежно від мови даних у БД. Аналогічний шаблон для зголошень до адмін./бухгалтерії — `new_service_request.html`, з клікабельними кнопками рішення. `EmailMultiAlternatives.attach_alternative(html_body, "text/html")` — листи мають і HTML, і plain-text fallback.
+
+## Міграції бази даних
+
+**Файли міграцій закомічені в git** (`core/migrations/`, `users/migrations/`) — вони є частиною коду, а не генеруються при кожному старті контейнера. Сервіс `migrate` у `docker-compose.yml` лише **накочує** (`manage.py migrate`) уже наявні міграції, не генерує нові.
+
+**Коли ви змінюєте модель** (`core/models.py`, `users/models.py`) — обов'язково локально:
+
+```bash
+python manage.py makemigrations users core
+git add core/migrations/ users/migrations/
+git commit -m "..."
+```
+
+Якщо забути це зробити, CI (`makemigrations --check --dry-run`) провалить збірку — саме для цього ця перевірка й існує.
+
+## Continuous Integration (CI)
+
+`.github/workflows/ci.yml` запускається на кожен push/PR у `main`/`develop`:
+
+- **`django-checks`** (проти реальних сервіс-контейнерів PostgreSQL 16 і Redis 7): `py_compile` кожного `.py`-файлу, `manage.py check`, `manage.py makemigrations users core --check --dry-run` (провалює збірку, якщо модель змінено, а міграцію не згенеровано й не закомічено), `manage.py migrate` на чистій тестовій БД, `collectstatic`
+- **`docker-build`**: збирає `Dockerfile`, валідує `docker-compose.yml` через `docker compose config`
+
+Секрети для CI не потрібні — усі значення `.env` у workflow фейкові/тестові, реальні токени там не використовуються.
 
 ## Локалізація
 
@@ -355,6 +425,7 @@ Django Admin → **Newsletters** (модель `Broadcast`) дозволяє н�
 - Django Admin: автоматичне вилогування за 10 хв неактивності (`SESSION_COOKIE_AGE=600`, `SESSION_SAVE_EVERY_REQUEST=True`)
 - ПІБ приймається лише латиницею — захист від ін'єкцій спецсимволів у звітах/листах
 - SMTP через Gmail вимагає App Password (2FA), а не звичайний пароль акаунта
+- Публічний URL рішення по зголошеннях до адмін./бухгалтерії захищений непідбірним токеном (32 байти), а не логіном; `GET` лише показує підтвердження, реальна дія — тільки на `POST`
 
 ## Розробка (hot-reload)
 
@@ -365,7 +436,8 @@ Django Admin → **Newsletters** (модель `Broadcast`) дозволяє н�
 | Симптом | Причина / рішення |
 |---|---|
 | `Connection refused` до `db` при старті | Postgres ще не готовий — вирішено healthcheck + сервісом `migrate` у `docker-compose.yml` |
-| `Dependency on app with no migrations` | Міграції не згенеровані — сервіс `migrate` виконує `makemigrations` + `migrate` перед стартом інших сервісів |
+| `Dependency on app with no migrations` | Міграції відсутні в репозиторії — виконайте `python manage.py makemigrations users core` і закомітьте результат (див. розділ «Міграції бази даних») |
+| `AttributeError: module 'core.models' has no attribute '...'` у `makemigrations --check` | Файл міграції посилається на функцію/поле, якого немає в поточному `models.py` — зазвичай означає, що модель і міграція закомічені неузгоджено. Видаліть застарілу міграцію, перегенеруйте (`makemigrations`) і закомітьте разом з моделлю |
 | Адмінка без стилів (CSS) | Gunicorn не роздає статику — вирішено WhiteNoise (`whitenoise.middleware.WhiteNoiseMiddleware`) |
 | `WORKER TIMEOUT` у gunicorn | Один sync-воркер і замалий таймаут — `--workers 2 --timeout 60` |
 | Кнопка в боті «крутиться» без відповіді | Необроблений exception у хендлері — aiogram не викликає `callback.answer()`; дивитись `docker compose logs -f bot` в момент кліку |
@@ -373,6 +445,8 @@ Django Admin → **Newsletters** (модель `Broadcast`) дозволяє н�
 | Заблокований користувач досі бачить старе меню | Reply-клавіатура Telegram не оновлюється сама — потрібно надіслати нове повідомлення з новою `reply_markup` (реалізовано в `bot/handlers/start.py`) |
 | Розсилка не пішла, хоча `celery-beat` відпрацював | Для одноразової розсилки перевірте, чи заповнене поле `scheduled_at` — без нього `is_due()` завжди `False`. Або скористайтесь дією «Надіслати зараз» |
 | Emoji-пікер не з'являється в адмінці | Найчастіше — статичні файли не перезібрані: `docker compose exec web python manage.py collectstatic --noinput`, потім жорстке оновлення сторінки в браузері |
+| Кнопки в email ведуть на `localhost` замість реального сайту | `SITE_BASE_URL` в `.env` не заповнений або вказує на неправильний домен |
+| GitHub Actions не запускається на push | Перевірте назву гілки в `on: push: branches: [...]` у `ci.yml` — має збігатися з вашою робочою гілкою (`main`, `develop` тощо); перевірте `Settings → Actions → General → Actions permissions` |
 
 ## Дорожня карта
 
@@ -381,3 +455,4 @@ Django Admin → **Newsletters** (модель `Broadcast`) дозволяє н�
 - Rate-limiting / anti-flood middleware для aiogram
 - Масовий імпорт Telegram ID (наприклад, з CSV) для швидкого первинного заповнення бази користувачів
 - Мультимовний текст розсилок (окремо для кожної мови отримувача)
+- Continuous Deployment (автоматичний деплой на сервер після успішного CI)
