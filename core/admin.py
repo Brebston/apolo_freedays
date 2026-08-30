@@ -10,6 +10,8 @@ from core.models import (
     ProjectEmailRecipient,
     Region,
     Broadcast,
+    DepartmentResponsiblePerson,
+    ServiceRequest,
 )
 from core.tasks import notify_worker_telegram
 from core.models import RequestStatus
@@ -175,3 +177,18 @@ class BroadcastAdmin(admin.ModelAdmin):
         self.message_user(
             request, f"Placed in the queue for immediate shipment: {count}"
         )
+
+
+@admin.register(DepartmentResponsiblePerson)
+class DepartmentResponsiblePersonAdmin(admin.ModelAdmin):
+    list_display = ("id", "department", "user", "recipient_type")
+    list_filter = ("department", "recipient_type")
+
+
+@admin.register(ServiceRequest)
+class ServiceRequestAdmin(admin.ModelAdmin):
+    list_display = ("id", "user", "request_type", "status", "created_at", "decided_at")
+    list_filter = ("request_type", "status")
+    search_fields = ("user__first_name", "user__last_name", "text")
+    readonly_fields = ("decision_token", "created_at")
+    date_hierarchy = "created_at"

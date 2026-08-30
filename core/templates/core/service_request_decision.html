@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Zgłoszenie pracownika</title>
+</head>
+<body style="margin:0; padding:0; background-color:#f2f4f7; font-family:'Segoe UI', Arial, Helvetica, sans-serif;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="padding:48px 16px;">
+<tr><td align="center">
+<table role="presentation" width="480" cellpadding="0" cellspacing="0" style="max-width:480px; width:100%; background:#ffffff; border-radius:12px; padding:36px 32px; box-shadow:0 2px 8px rgba(16,24,40,0.08); text-align:center;">
+<tr><td>
+
+{% if already_decided and not just_decided %}
+  <div style="font-size:40px;">ℹ️</div>
+  <h2 style="margin:16px 0 8px 0; color:#101828;">To zgłoszenie zostało już przetworzone</h2>
+  <p style="color:#667085;">Bieżący status: <strong>{{ service_request.get_status_display }}</strong></p>
+
+{% elif just_decided %}
+  <div style="font-size:40px;">✅</div>
+  <h2 style="margin:16px 0 8px 0; color:#101828;">Decyzja zapisana</h2>
+  <p style="color:#667085;">Status zgłoszenia: <strong>{{ service_request.get_status_display }}</strong></p>
+  <p style="color:#98a2b3; font-size:13px;">Pracownik otrzymał powiadomienie w Telegramie.</p>
+
+{% else %}
+  <h2 style="margin:0 0 16px 0; color:#101828;">{{ action_label }}?</h2>
+  <p style="color:#667085; margin-bottom:24px; text-align:left;">
+    <strong>Pracownik:</strong> {{ service_request.user.last_name }} {{ service_request.user.first_name }}<br>
+    <strong>Rodzaj:</strong> {{ service_request.get_request_type_display }}<br>
+    <strong>Treść:</strong> {{ service_request.text }}
+  </p>
+  <form method="post">
+    <button type="submit" style="padding:12px 28px; border:none; border-radius:8px; background-color:#1f3a5f; color:#ffffff; font-size:15px; font-weight:600; cursor:pointer;">
+      Potwierdź: {{ action_label }}
+    </button>
+  </form>
+{% endif %}
+
+</td></tr>
+</table>
+</td></tr>
+</table>
+</body>
+</html>

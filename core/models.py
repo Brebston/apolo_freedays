@@ -1,5 +1,7 @@
 import calendar as cal_module
 
+import secrets
+
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.conf import settings
 from django.db import models
@@ -333,3 +335,86 @@ class Broadcast(models.Model):
             effective_day = min(self.day_of_month, last_day)
             return now.day == effective_day
         return False
+
+
+def generate_decision_token():
+    return secrets.token_urlsafe(32)
+
+
+class RequestDepartment(models.TextChoices):
+    ADMINISTRATION = "administration", "Administration"
+    ACCOUNTING = "accounting", "Accounting Department"
+
+
+class DepartmentResponsiblePerson(models.Model):
+    """
+    Who receives an email upon a new submission to the administration/accounting department —
+    analogous to ProjectEmailRecipient, but linked to the User profile (the email
+    is always taken from the current user.email) rather than an arbitrary address.
+    """
+
+    department = models.CharField(
+        max_length=20,
+        choices=RequestDepartment.choices,
+        verbose_name="Department",
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        limit_choices_to={"is_staff": True},
+        related_name="department_responsibilities",
+        verbose_name="Person in charge",
+    )
+    recipient_type = models.CharField(
+        max_length=2,
+        choices=EmailRecipientType.choices,
+        default=EmailRecipientType.TO,
+        verbose_name="Sending type",
+    )
+
+    class Meta:
+        verbose_name = "Department contact person"
+        verbose_name_plural = "Departmental points of contact"
+        unique_together = ("department", "user", "recipient_type")
+
+    def __str__(self):
+        return f"{self.get_department_display()} — {self.user} ({self.get_recipient_type_display()})"
+
+
+class ServiceRequest(models.Model):
+    """
+    Submission to administration (documents) or the accounting department
+    (salary-related questions). Unlike an AbsenceRequest, this does not
+    involve dates or a project—only free-text input. The decision (Accept/Reject)
+    is made not within the bot, but directly via email using a link containing
+    a unique `decision_token`.
+    """
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="service_requests",
+    )
+    request_type = models.CharField(
+        max_length=20, choices=RequestDepartment.choices, verbose_name="Тип"
+    )
+    text = models.TextField(verbose_name="Text of the request")
+    status = models.CharField(
+        max_length=10,
+        choices=RequestStatus.choices,
+        default=RequestStatus.PENDING,
+        verbose_name="Status",
+    )
+    decision_token = models.CharField(
+        max_length=64, unique=True, default=generate_decision_token, editable=False
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    decided_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        verbose_name = "Reporting to Administration/Accounting"
+        verbose_name_plural = "Reporting to Administration/Accounting"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.get_request_type_display()} — {self.user} ({self.status})"
