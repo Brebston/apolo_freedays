@@ -23,6 +23,7 @@ INSTALLED_APPS = [
     "users",
     "core",
     "bot",
+    "api",
 ]
 
 MIDDLEWARE = [
