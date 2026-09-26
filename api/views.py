@@ -19,8 +19,10 @@ from django.views.decorators.http import require_GET, require_POST
 
 from api.auth import telegram_auth
 from core import services
+from core import sick_leave_files
 from core.models import (
     AbsenceRequest, Project, Region, RequestDepartment, RequestStatus, RequestType, ServiceRequest,
+    SickLeaveDocument,
 )
 from users.models import Language, User
 
@@ -61,6 +63,10 @@ def _absence_payload(req: AbsenceRequest, with_worker: bool = False) -> dict:
         "dates": [d.isoformat() for d in services.request_dates(req)],
         "created_at": req.created_at.isoformat(),
     }
+    if req.request_type == RequestType.L4:
+        documents = [_document_payload(doc) for doc in req.documents.all()]
+        data["documents"] = documents
+        data["needs_document"] = not documents
     if with_worker:
         data["worker"] = {
             "name": f"{req.user.last_name} {req.user.first_name}".strip(),
@@ -68,6 +74,16 @@ def _absence_payload(req: AbsenceRequest, with_worker: bool = False) -> dict:
         }
         data["can_reject"] = req.can_be_rejected()
     return data
+
+
+def _document_payload(doc: SickLeaveDocument) -> dict:
+    return {
+        "id": doc.id,
+        "filename": doc.filename,
+        "size": doc.size,
+        "uploaded_at": doc.uploaded_at.isoformat(),
+        "emailed_at": doc.emailed_at.isoformat() if doc.emailed_at else None,
+    }
 
 
 def _service_payload(req: ServiceRequest) -> dict:
@@ -258,6 +274,61 @@ def create_absence_request(request):
     return JsonResponse({"request": _absence_payload(absence)}, status=201)
 
 
+# --- Лікарняний: прикріплення документів -----------------------------------
+
+@csrf_exempt
+@require_POST
+@telegram_auth()
+def upload_sick_leave_documents(request, request_id: int):
+    absence = (
+        AbsenceRequest.objects.select_related("project", "project__region")
+        .filter(id=request_id, user=request.app_user, request_type=RequestType.L4)
+        .first()
+    )
+    if absence is None:
+        return _error("not_found", 404)
+
+    files = request.FILES.getlist("files")
+    if not files:
+        return _error("no_files")
+    if len(files) > sick_leave_files.MAX_FILES_PER_UPLOAD:
+        return _error("too_many_files", limit=sick_leave_files.MAX_FILES_PER_UPLOAD)
+    if absence.documents.count() + len(files) > sick_leave_files.MAX_FILES_PER_REQUEST:
+        return _error("too_many_files", limit=sick_leave_files.MAX_FILES_PER_REQUEST)
+    if sum(f.size for f in files) > sick_leave_files.MAX_UPLOAD_BYTES:
+        return _error("upload_too_large", limit_mb=sick_leave_files.MAX_UPLOAD_BYTES // (1024 * 1024))
+
+    prepared = []
+    for index, upload in enumerate(files, start=1):
+        if upload.size > sick_leave_files.MAX_FILE_BYTES:
+            return _error("file_too_large", name=upload.name, limit_mb=sick_leave_files.MAX_FILE_BYTES // (1024 * 1024))
+        content = upload.read()
+        detected = sick_leave_files.detect_file_type(content[:32])
+        if detected is None:
+            return _error("file_type", name=upload.name)
+        content_type, extension = detected
+        prepared.append(SickLeaveDocument(
+            request=absence,
+            filename=sick_leave_files.safe_filename(upload.name, extension, index),
+            content_type=content_type,
+            size=len(content),
+            content=content,
+        ))
+
+    with transaction.atomic():
+        created = SickLeaveDocument.objects.bulk_create(prepared)
+        document_ids = [doc.id for doc in created]
+
+        def _notify():
+            from core.tasks import send_sick_leave_email
+            send_sick_leave_email.delay(absence.id, document_ids)
+
+        transaction.on_commit(_notify)
+
+    absence = AbsenceRequest.objects.select_related("project", "project__region").prefetch_related("documents").get(id=absence.id)
+    return JsonResponse({"request": _absence_payload(absence)}, status=201)
+
+
 # --- Зголошення до адміністрації / бухгалтерії -----------------------------
 
 @csrf_exempt
@@ -291,7 +362,8 @@ def my_requests(request):
     user = request.app_user
     absence = [
         _absence_payload(r) for r in
-        AbsenceRequest.objects.select_related("project", "project__region").filter(user=user).order_by("-created_at")[:50]
+        AbsenceRequest.objects.select_related("project", "project__region").prefetch_related("documents")
+        .filter(user=user).order_by("-created_at")[:50]
     ]
     service = [_service_payload(r) for r in ServiceRequest.objects.filter(user=user).order_by("-created_at")[:50]]
     items = sorted(absence + service, key=lambda item: item["created_at"], reverse=True)[:50]
@@ -301,7 +373,7 @@ def my_requests(request):
 # --- Панель координатора ----------------------------------------------------
 
 def _coordinator_scope(user: User):
-    qs = AbsenceRequest.objects.select_related("user", "project", "project__region")
+    qs = AbsenceRequest.objects.select_related("user", "project", "project__region").prefetch_related("documents")
     if user.is_superuser:
         return qs
     return qs.filter(project__coordinators=user)

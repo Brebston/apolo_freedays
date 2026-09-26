@@ -1,3 +1,5 @@
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
+from django.conf import settings
 from datetime import date
 
 from aiogram import F, Router
@@ -293,6 +295,13 @@ async def confirm_request(callback: CallbackQuery, state: FSMContext):
     )
     await state.clear()
     await callback.message.edit_text(t("request_created", lang))
+    if data["request_type"] == "l4":
+        reminder_markup = None
+        if settings.WEBAPP_URL:
+            reminder_markup = InlineKeyboardMarkup(inline_keyboard=[[
+                InlineKeyboardButton(text=t("btn_open_app", lang), web_app=WebAppInfo(url=settings.WEBAPP_URL)),
+            ]])
+        await callback.message.answer(t("l4_attach_reminder", lang), reply_markup=reminder_markup)
     await callback.message.answer(
         t("main_menu_title", lang), reply_markup=main_menu_keyboard(lang, user.is_staff)
     )

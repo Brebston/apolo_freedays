@@ -12,6 +12,7 @@ import { Contacts, Language } from './screens/Info'
 import { MyRequests } from './screens/MyRequests'
 import { NewRequest, Sent } from './screens/NewRequest'
 import { ServiceConfirm, ServiceText } from './screens/ServiceFlow'
+import { SickLeave } from './screens/SickLeave'
 
 const SCREENS = {
   home: Home,
@@ -29,6 +30,7 @@ const SCREENS = {
   language: Language,
   coordinatorList: CoordinatorList,
   coordinatorDetail: CoordinatorDetail,
+  sickLeave: SickLeave,
 }
 
 let nextEntryId = 1

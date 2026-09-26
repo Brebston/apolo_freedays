@@ -61,6 +61,14 @@ export function apiErrorText(t, lang, error) {
       return t('err_already_decided')
     case 'l4_cannot_reject':
       return t('l4NoReject')
+    case 'file_type':
+      return t('err_file_type', { name: detail.name })
+    case 'file_too_large':
+      return t('err_file_too_large', { name: detail.name, limit: detail.limit_mb })
+    case 'too_many_files':
+      return t('err_too_many_files', { limit: detail.limit })
+    case 'upload_too_large':
+      return t('err_upload_too_large', { limit: detail.limit_mb })
     default:
       return t('err_generic')
   }

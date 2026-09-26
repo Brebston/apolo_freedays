@@ -840,3 +840,112 @@ a {
     transition-duration: 1ms !important;
   }
 }
+
+/* ---------- Лікарняний: прикріплення документів ---------- */
+
+.notice-info {
+  border-left-color: var(--accent);
+}
+
+.notice-success {
+  border-left-color: var(--approved);
+}
+
+.attach-hint {
+  color: var(--pending);
+  color: color-mix(in srgb, var(--pending) 72%, var(--text));
+  font-weight: 600;
+}
+
+.type-attention {
+  background: rgba(217, 154, 30, 0.16);
+}
+
+.picker {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  margin-top: 20px;
+  padding: 18px 16px;
+  border: 1.5px dashed var(--accent);
+  border-radius: var(--radius-section);
+  background: var(--surface);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.picker:active {
+  background: var(--separator);
+}
+
+.picker-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.picker-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.picker-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--link);
+}
+
+.picker-hint {
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--hint);
+}
+
+.file-thumb {
+  display: block;
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  object-fit: cover;
+  background: var(--page);
+}
+
+.file-thumb-doc {
+  display: grid;
+  place-items: center;
+  color: var(--hint);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.btn-inline-danger {
+  color: var(--danger);
+}
+
+.upload-progress {
+  height: 4px;
+  margin: 0 var(--gutter) 12px;
+  border-radius: 999px;
+  background: var(--page);
+  overflow: hidden;
+}
+
+.upload-progress span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 160ms ease;
+}
+
+.sent .btn-secondary {
+  margin-top: -8px;
+}

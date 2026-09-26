@@ -126,7 +126,14 @@ CELERY_BEAT_SCHEDULE = {
         "task": "core.tasks.check_and_send_due_broadcasts",
         "schedule": crontab(minute="*/5"),
     },
+    "purge-old-sick-leave-files": {
+        "task": "core.tasks.purge_old_sick_leave_files",
+        "schedule": crontab(hour=3, minute=30),
+    },
 }
+
+# Скільки днів зберігати файли лікарняних після відправки координатору
+SICK_LEAVE_FILE_RETENTION_DAYS = int(os.getenv("SICK_LEAVE_FILE_RETENTION_DAYS", "90"))
 # ---------------------------------------------------------------------------
 # Email via Resend HTTPS API
 # ---------------------------------------------------------------------------
