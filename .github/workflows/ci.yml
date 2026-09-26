@@ -103,3 +103,15 @@ jobs:
 
       - name: Validate docker-compose.yml
         run: docker compose config --quiet
+
+  webapp-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npm install
+        working-directory: webapp
+      - run: npm run build
+        working-directory: webapp
