@@ -93,6 +93,15 @@ STORAGES = {
         "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
     },
 }
+WEBAPP_URL = os.getenv("WEBAPP_URL", "")
+WEBAPP_DEV_TELEGRAM_ID = os.getenv("WEBAPP_DEV_TELEGRAM_ID", "")
+_WEBAPP_DIST = BASE_DIR / "webapp" / "dist"
+STATICFILES_DIRS = [("webapp", _WEBAPP_DIST)] if _WEBAPP_DIST.exists() else []
+
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+CSRF_TRUSTED_ORIGINS = [
+    o for o in os.getenv("CSRF_TRUSTED_ORIGINS", "").split(",") if o
+]
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
