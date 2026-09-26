@@ -24,6 +24,7 @@ INSTALLED_APPS = [
     "core",
     "bot",
     "api",
+    "anymail",
 ]
 
 MIDDLEWARE = [
@@ -127,13 +128,17 @@ CELERY_BEAT_SCHEDULE = {
     },
 }
 # ---------------------------------------------------------------------------
-# Email (used by Celery task for project notifications)
+# Email via Resend HTTPS API
 # ---------------------------------------------------------------------------
-EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
-EMAIL_HOST = os.getenv("EMAIL_HOST", "")
-EMAIL_PORT = int(os.getenv("EMAIL_PORT", "587"))
-EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "")
-EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "")
-EMAIL_USE_TLS = os.getenv("EMAIL_USE_TLS", "1") == "1"
-DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "noreply@example.com")
+EMAIL_BACKEND = "anymail.backends.resend.EmailBackend"
+
+ANYMAIL = {
+    "RESEND_API_KEY": os.getenv("RESEND_API_KEY", ""),
+}
+
+DEFAULT_FROM_EMAIL = os.getenv(
+    "DEFAULT_FROM_EMAIL",
+    "Apolo FreeDays <notifications@apolo.blacky.click>",
+)
+
 SITE_BASE_URL = os.getenv("SITE_BASE_URL", "http://localhost:8000")
