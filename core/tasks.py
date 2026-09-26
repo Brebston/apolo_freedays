@@ -311,12 +311,16 @@ def send_sick_leave_email(self, request_id: int, document_ids: list[int]):
     from core.services import request_dates
 
     try:
-        req = AbsenceRequest.objects.select_related("user", "project", "project__region").get(id=request_id)
+        req = AbsenceRequest.objects.select_related(
+            "user", "project", "project__region"
+        ).get(id=request_id)
     except AbsenceRequest.DoesNotExist:
         return
 
     documents = list(
-        SickLeaveDocument.objects.filter(request=req, id__in=document_ids, content__isnull=False)
+        SickLeaveDocument.objects.filter(
+            request=req, id__in=document_ids, content__isnull=False
+        )
     )
     if not documents:
         return
@@ -327,7 +331,11 @@ def send_sick_leave_email(self, request_id: int, document_ids: list[int]):
     if not to_list:
         return
 
-    is_supplement = req.documents.filter(emailed_at__isnull=False).exclude(id__in=document_ids).exists()
+    is_supplement = (
+        req.documents.filter(emailed_at__isnull=False)
+        .exclude(id__in=document_ids)
+        .exists()
+    )
     absence_dates = request_dates(req)
     worker_name = f"{req.user.last_name} {req.user.first_name}"
 
@@ -346,7 +354,11 @@ def send_sick_leave_email(self, request_id: int, document_ids: list[int]):
     }
     html_body = render_to_string("core/emails/sick_leave_document.html", context)
 
-    prefix = "Uzupełnienie: zwolnienie lekarskie" if is_supplement else "Zwolnienie lekarskie (L4)"
+    prefix = (
+        "Uzupełnienie: zwolnienie lekarskie"
+        if is_supplement
+        else "Zwolnienie lekarskie (L4)"
+    )
     subject = f"{prefix} — {worker_name} — {req.project.name}"
     text_body = (
         f"Pracownik: {worker_name}\n"
@@ -374,7 +386,9 @@ def send_sick_leave_email(self, request_id: int, document_ids: list[int]):
     except Exception as exc:  # noqa: BLE001
         raise self.retry(exc=exc)
 
-    SickLeaveDocument.objects.filter(id__in=[doc.id for doc in documents]).update(emailed_at=timezone.now())
+    SickLeaveDocument.objects.filter(id__in=[doc.id for doc in documents]).update(
+        emailed_at=timezone.now()
+    )
 
 
 @shared_task
@@ -390,5 +404,6 @@ def purge_old_sick_leave_files():
 
     cutoff = timezone.now() - timedelta(days=settings.SICK_LEAVE_FILE_RETENTION_DAYS)
     return SickLeaveDocument.objects.filter(
-        emailed_at__lt=cutoff, content__isnull=False,
+        emailed_at__lt=cutoff,
+        content__isnull=False,
     ).update(content=None, purged_at=timezone.now())

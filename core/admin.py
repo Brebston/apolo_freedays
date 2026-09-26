@@ -79,7 +79,9 @@ class SickLeaveDocumentInline(admin.TabularInline):
     def download(self, obj):
         if obj.content is None:
             return f"{obj.filename} (removed after retention period)"
-        url = reverse("admin:core_absencerequest_document_download", args=[obj.request_id, obj.id])
+        url = reverse(
+            "admin:core_absencerequest_document_download", args=[obj.request_id, obj.id]
+        )
         return format_html('<a href="{}">⬇ {}</a>', url, obj.filename)
 
     @admin.display(description="Size")
@@ -104,7 +106,12 @@ class AbsenceRequestAdmin(admin.ModelAdmin):
     def download_document(self, request, request_id, document_id):
         if not self.has_view_permission(request):
             raise PermissionDenied
-        doc = get_object_or_404(SickLeaveDocument, id=document_id, request_id=request_id, content__isnull=False)
+        doc = get_object_or_404(
+            SickLeaveDocument,
+            id=document_id,
+            request_id=request_id,
+            content__isnull=False,
+        )
         response = HttpResponse(bytes(doc.content), content_type=doc.content_type)
         response["Content-Disposition"] = content_disposition_header(True, doc.filename)
         return response

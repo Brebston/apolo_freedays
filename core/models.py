@@ -451,4 +451,3 @@ class SickLeaveDocument(models.Model):
 
     def __str__(self):
         return f"{self.filename} ({self.request})"
-

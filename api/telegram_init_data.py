@@ -20,7 +20,12 @@ class InitDataError(Exception):
     pass
 
 
-def validate_init_data(init_data: str, bot_token: str, max_age_seconds: int = 86400, now: float | None = None) -> dict:
+def validate_init_data(
+    init_data: str,
+    bot_token: str,
+    max_age_seconds: int = 86400,
+    now: float | None = None,
+) -> dict:
     """
     Повертає розібрані дані (з уже декодованим полем "user"), якщо підпис
     правильний і дані не застарілі. Інакше кидає InitDataError.
@@ -37,7 +42,9 @@ def validate_init_data(init_data: str, bot_token: str, max_age_seconds: int = 86
 
     data_check_string = "\n".join(f"{key}={pairs[key]}" for key in sorted(pairs))
     secret_key = hmac.new(b"WebAppData", bot_token.encode(), hashlib.sha256).digest()
-    calculated_hash = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
+    calculated_hash = hmac.new(
+        secret_key, data_check_string.encode(), hashlib.sha256
+    ).hexdigest()
 
     if not hmac.compare_digest(calculated_hash, received_hash):
         raise InitDataError("bad_signature")
