@@ -14,7 +14,8 @@ def webapp_index(request):
     except FileNotFoundError:
         return HttpResponse(
             "Mini App не зібрано: виконайте `npm run build` у директорії webapp/.",
-            status=503, content_type="text/plain; charset=utf-8",
+            status=503,
+            content_type="text/plain; charset=utf-8",
         )
     response = HttpResponse(html)
     response["Cache-Control"] = "no-cache"

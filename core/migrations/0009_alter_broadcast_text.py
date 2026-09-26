@@ -6,13 +6,16 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('core', '0008_alter_broadcast_audience_alter_broadcast_recurrence_and_more'),
+        ("core", "0008_alter_broadcast_audience_alter_broadcast_recurrence_and_more"),
     ]
 
     operations = [
         migrations.AlterField(
-            model_name='broadcast',
-            name='text',
-            field=models.TextField(help_text='Supports emojis and basic Telegram HTML formatting: <b>bold</b>, <i>italics</i>', verbose_name='Message text'),
+            model_name="broadcast",
+            name="text",
+            field=models.TextField(
+                help_text="Supports emojis and basic Telegram HTML formatting: <b>bold</b>, <i>italics</i>",
+                verbose_name="Message text",
+            ),
         ),
     ]

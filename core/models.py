@@ -189,7 +189,7 @@ class AbsenceRequest(models.Model):
 
 
 class RecurrenceType(models.TextChoices):
-    NONE = "none”, “None (one-time)"
+    NONE = "none", "None (one-time)"
     DAILY = "daily", "Daily"
     WEEKLY = "weekly", "Weekly"
     MONTHLY = "monthly", "Monthly"
@@ -418,3 +418,36 @@ class ServiceRequest(models.Model):
 
     def __str__(self):
         return f"{self.get_request_type_display()} — {self.user} ({self.status})"
+
+
+class SickLeaveDocument(models.Model):
+    """
+    Скан або фото лікарняного (L4), прикріплене працівником у Mini App.
+
+    Вміст зберігається в Postgres, а не на диску: на Railway у кожного сервісу
+    свій тимчасовий диск, тож файл, збережений сервісом web, не побачив би
+    worker, який надсилає лист. Після відправки і терміну зберігання
+    (SICK_LEAVE_FILE_RETENTION_DAYS) вміст очищується автоматично, запис лишається.
+    """
+
+    request = models.ForeignKey(
+        AbsenceRequest,
+        on_delete=models.CASCADE,
+        related_name="documents",
+        verbose_name="Request",
+    )
+    filename = models.CharField(max_length=255, verbose_name="File name")
+    content_type = models.CharField(max_length=100, verbose_name="Content type")
+    size = models.PositiveIntegerField(verbose_name="Size (bytes)")
+    content = models.BinaryField(null=True, blank=True, editable=False)
+    uploaded_at = models.DateTimeField(auto_now_add=True, verbose_name="Uploaded")
+    emailed_at = models.DateTimeField(null=True, blank=True, verbose_name="Emailed")
+    purged_at = models.DateTimeField(null=True, blank=True, verbose_name="File removed")
+
+    class Meta:
+        verbose_name = "Sick leave document"
+        verbose_name_plural = "Sick leave documents"
+        ordering = ["uploaded_at"]
+
+    def __str__(self):
+        return f"{self.filename} ({self.request})"

@@ -29,6 +29,20 @@ export function MyRequests() {
           {items.map((item) => {
             const key = `${item.kind}-${item.id}`
             const isOpen = openKey === key
+            if (item.type === 'l4') {
+              return (
+                <div key={key} className="request-item">
+                  <Row
+                    icon={<TypeIcon type={item.type} />}
+                    title={t(`type_${item.type}`)}
+                    subtitle={requestSummary(t, lang, item)}
+                    detail={item.needs_document ? <span className="attach-hint">📎 {t('needsDocument')}</span> : null}
+                    after={<StatusChip status={item.status} />}
+                    onClick={() => nav.push('sickLeave', { request: item })}
+                  />
+                </div>
+              )
+            }
             return (
               <div key={key} className={`request-item${isOpen ? ' is-open' : ''}`}>
                 <Row

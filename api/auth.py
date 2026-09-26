@@ -41,7 +41,9 @@ def telegram_auth(require_access: bool = True, require_staff: bool = False):
                 return JsonResponse({"error": "unauthorized"}, status=401)
 
             request.tg_user = tg_user
-            request.app_user = User.objects.filter(telegram_id=tg_user["id"], is_active=True).first()
+            request.app_user = User.objects.filter(
+                telegram_id=tg_user["id"], is_active=True
+            ).first()
 
             if require_access and request.app_user is None:
                 return JsonResponse({"error": "no_access"}, status=403)

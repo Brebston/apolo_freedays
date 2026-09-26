@@ -194,6 +194,18 @@ TEXTS = {
         "en": "✅ Request submitted! The coordinator has been notified.",
         "ru": "✅ Заявка подана! Координатор получил уведомление.",
     },
+    "l4_attach_reminder": {
+        "uk": "📎 Не забудьте: щойно отримаєте лікарняний, прикріпіть його в застосунку — «Мої зголошення» → цей лікарняний → «Прикріпити лікарняний». Файл одразу піде координатору.",
+        "pl": "📎 Pamiętaj: gdy tylko otrzymasz zwolnienie lekarskie, dołącz je w aplikacji — „Moje zgłoszenia” → to L4 → „Dołącz zwolnienie”. Plik od razu trafi do koordynatora.",
+        "en": "📎 Don’t forget: as soon as you get your sick note, attach it in the app — “My requests” → this sick leave → “Attach sick note”. The file goes straight to your coordinator.",
+        "ru": "📎 Не забудьте: как только получите больничный, прикрепите его в приложении — «Мои заявки» → этот больничный → «Прикрепить больничный». Файл сразу уйдёт координатору.",
+    },
+    "btn_open_app": {
+        "uk": "Відкрити застосунок",
+        "pl": "Otwórz aplikację",
+        "en": "Open the app",
+        "ru": "Открыть приложение",
+    },
     "request_cancelled": {
         "uk": "Скасовано.",
         "pl": "Anulowano.",

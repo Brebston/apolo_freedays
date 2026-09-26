@@ -32,7 +32,7 @@ export function NewRequest() {
   )
 }
 
-export function Sent({ kind }) {
+export function Sent({ kind, request }) {
   const { t, nav } = useApp()
   const goHome = () => nav.reset(['home'])
 
@@ -44,7 +44,14 @@ export function Sent({ kind }) {
           <path className="sent-check" d="M20 33.5l8.5 8.5L45 24" />
         </svg>
         <h1>{t('sentTitle')}</h1>
-        <p className="lead">{kind === 'service' ? t('sentService') : t('sentAbsence')}</p>
+        <p className="lead">
+          {kind === 'service' ? t('sentService') : request?.type === 'l4' ? t('sentL4') : t('sentAbsence')}
+        </p>
+        {request?.type === 'l4' && (
+          <button type="button" className="btn btn-secondary" onClick={() => nav.push('sickLeave', { request })}>
+            📎 {t('attachNow')}
+          </button>
+        )}
       </div>
       <MainAction text={t('toHome')} onClick={goHome} />
     </Screen>

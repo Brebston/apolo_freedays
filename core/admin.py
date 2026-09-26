@@ -1,3 +1,10 @@
+from django.core.exceptions import PermissionDenied
+from django.http import HttpResponse
+from django.shortcuts import get_object_or_404
+from django.template.defaultfilters import filesizeformat
+from django.urls import path, reverse
+from django.utils.html import format_html
+from django.utils.http import content_disposition_header
 from django.contrib import admin
 from django.utils import timezone
 from django import forms
@@ -12,6 +19,7 @@ from core.models import (
     Broadcast,
     DepartmentResponsiblePerson,
     ServiceRequest,
+    SickLeaveDocument,
 )
 from core.tasks import notify_worker_telegram
 from core.models import RequestStatus
@@ -55,8 +63,59 @@ class ProjectAdmin(admin.ModelAdmin):
         return ", ".join(str(c) for c in obj.coordinators.all())
 
 
+class SickLeaveDocumentInline(admin.TabularInline):
+    model = SickLeaveDocument
+    extra = 0
+    can_delete = False
+    fields = ("download", "size_display", "uploaded_at", "emailed_at", "purged_at")
+    readonly_fields = fields
+    verbose_name = "Sick leave document"
+    verbose_name_plural = "Sick leave documents (L4)"
+
+    def has_add_permission(self, request, obj=None):
+        return False
+
+    @admin.display(description="File")
+    def download(self, obj):
+        if obj.content is None:
+            return f"{obj.filename} (removed after retention period)"
+        url = reverse(
+            "admin:core_absencerequest_document_download", args=[obj.request_id, obj.id]
+        )
+        return format_html('<a href="{}">⬇ {}</a>', url, obj.filename)
+
+    @admin.display(description="Size")
+    def size_display(self, obj):
+        return filesizeformat(obj.size)
+
+
 @admin.register(AbsenceRequest)
 class AbsenceRequestAdmin(admin.ModelAdmin):
+    inlines = [SickLeaveDocumentInline]
+
+    def get_urls(self):
+        custom = [
+            path(
+                "<int:request_id>/documents/<int:document_id>/download/",
+                self.admin_site.admin_view(self.download_document),
+                name="core_absencerequest_document_download",
+            ),
+        ]
+        return custom + super().get_urls()
+
+    def download_document(self, request, request_id, document_id):
+        if not self.has_view_permission(request):
+            raise PermissionDenied
+        doc = get_object_or_404(
+            SickLeaveDocument,
+            id=document_id,
+            request_id=request_id,
+            content__isnull=False,
+        )
+        response = HttpResponse(bytes(doc.content), content_type=doc.content_type)
+        response["Content-Disposition"] = content_disposition_header(True, doc.filename)
+        return response
+
     list_display = (
         "id",
         "user",

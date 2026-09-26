@@ -179,9 +179,9 @@ export function AbsenceConfirm({ type, region, project, dates }) {
     setSending(true)
     setError('')
     try {
-      await api.createAbsence({ type, project_id: project.id, dates })
+      const result = await api.createAbsence({ type, project_id: project.id, dates })
       haptic.success()
-      nav.reset(['home'], ['sent', { kind: 'absence' }])
+      nav.reset(['home'], ['sent', { kind: 'absence', request: result.request }])
     } catch (err) {
       haptic.error()
       if (err.code === 'no_access') {
@@ -204,6 +204,7 @@ export function AbsenceConfirm({ type, region, project, dates }) {
           <DateChips dates={dates} lang={lang} format={formatDay} />
         </div>
       </Section>
+      {type === 'l4' && <Notice tone="info">📎 {t('l4Reminder')}</Notice>}
       <Notice tone="error">{error}</Notice>
       <MainAction text={t('send')} loading={sending} onClick={submit} />
     </Screen>

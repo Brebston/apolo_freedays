@@ -299,3 +299,111 @@ def notify_service_request_decision(self, service_request_id: int):
         )
     except requests.RequestException as exc:
         raise self.retry(exc=exc)
+
+
+@shared_task(bind=True, max_retries=3, default_retry_delay=60)
+def send_sick_leave_email(self, request_id: int, document_ids: list[int]):
+    """
+    Лист з файлами лікарняного тим самим адресатам To/CC проєкту, що отримують
+    лист про саму заявку. Стиль і поля — як у new_absence_request.html.
+    """
+    from core.models import AbsenceRequest, EmailRecipientType, SickLeaveDocument
+    from core.services import request_dates
+
+    try:
+        req = AbsenceRequest.objects.select_related(
+            "user", "project", "project__region"
+        ).get(id=request_id)
+    except AbsenceRequest.DoesNotExist:
+        return
+
+    documents = list(
+        SickLeaveDocument.objects.filter(
+            request=req, id__in=document_ids, content__isnull=False
+        )
+    )
+    if not documents:
+        return
+
+    recipients = list(req.project.email_recipients.all())
+    to_list = [r.email for r in recipients if r.recipient_type == EmailRecipientType.TO]
+    cc_list = [r.email for r in recipients if r.recipient_type == EmailRecipientType.CC]
+    if not to_list:
+        return
+
+    is_supplement = (
+        req.documents.filter(emailed_at__isnull=False)
+        .exclude(id__in=document_ids)
+        .exists()
+    )
+    absence_dates = request_dates(req)
+    worker_name = f"{req.user.last_name} {req.user.first_name}"
+
+    context = {
+        "worker_name": worker_name,
+        "worker_email": req.user.email,
+        "worker_phone": req.user.phone,
+        "project_name": req.project.name,
+        "region_name": req.project.region.name,
+        "start_date": req.start_date,
+        "end_date": req.end_date,
+        "absence_dates": absence_dates,
+        "days_count": req.days_count,
+        "attachments": documents,
+        "is_supplement": is_supplement,
+    }
+    html_body = render_to_string("core/emails/sick_leave_document.html", context)
+
+    prefix = (
+        "Uzupełnienie: zwolnienie lekarskie"
+        if is_supplement
+        else "Zwolnienie lekarskie (L4)"
+    )
+    subject = f"{prefix} — {worker_name} — {req.project.name}"
+    text_body = (
+        f"Pracownik: {worker_name}\n"
+        f"Email: {req.user.email or '—'}\n"
+        f"Telefon: {req.user.phone or '—'}\n"
+        f"Projekt: {req.project.name} ({req.project.region.name})\n"
+        f"Termin: {req.start_date:%d.%m.%Y} — {req.end_date:%d.%m.%Y}\n"
+        f"Dni nieobecności: {', '.join(d.strftime('%d.%m.%Y') for d in absence_dates)}\n"
+        f"Liczba dni: {req.days_count}\n"
+        f"Załączniki: {', '.join(doc.filename for doc in documents)}\n"
+    )
+
+    try:
+        email = EmailMultiAlternatives(
+            subject=subject,
+            body=text_body,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            to=to_list,
+            cc=cc_list or None,
+        )
+        email.attach_alternative(html_body, "text/html")
+        for doc in documents:
+            email.attach(doc.filename, bytes(doc.content), doc.content_type)
+        email.send(fail_silently=False)
+    except Exception as exc:  # noqa: BLE001
+        raise self.retry(exc=exc)
+
+    SickLeaveDocument.objects.filter(id__in=[doc.id for doc in documents]).update(
+        emailed_at=timezone.now()
+    )
+
+
+@shared_task
+def purge_old_sick_leave_files():
+    """
+    Щодня: видаляє вміст файлів, які вже надіслані координатору понад
+    SICK_LEAVE_FILE_RETENTION_DAYS днів тому. Запис (назва, розмір, дати) лишається,
+    копія файлу — у листі координатора. Ручне чищення бази не потрібне.
+    """
+    from datetime import timedelta
+
+    from core.models import SickLeaveDocument
+
+    cutoff = timezone.now() - timedelta(days=settings.SICK_LEAVE_FILE_RETENTION_DAYS)
+    return SickLeaveDocument.objects.filter(
+        emailed_at__lt=cutoff,
+        content__isnull=False,
+    ).update(content=None, purged_at=timezone.now())

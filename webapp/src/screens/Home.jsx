@@ -17,6 +17,9 @@ export function Home() {
     [],
   )
   const latest = requests.data?.requests?.[0]
+  const missingSickNotes = (requests.data?.requests || [])
+    .filter((item) => item.type === 'l4' && item.needs_document && item.status !== 'rejected')
+    .slice(0, 3)
   const newCount = pending.data?.requests?.length || 0
 
   return (
@@ -39,6 +42,20 @@ export function Home() {
           <span className="hero-hint">{t('newRequestHint')}</span>
         </span>
       </button>
+
+      {missingSickNotes.length > 0 && (
+        <Section title={t('homeReminderTitle')}>
+          {missingSickNotes.map((item) => (
+            <Row
+              key={item.id}
+              icon={<span className="type-icon type-attention" aria-hidden="true">📎</span>}
+              title={t('attachSickLeave')}
+              subtitle={requestSummary(t, lang, item)}
+              onClick={() => nav.push('sickLeave', { request: item })}
+            />
+          ))}
+        </Section>
+      )}
 
       {latest && (
         <Section title={t('latest')}>
