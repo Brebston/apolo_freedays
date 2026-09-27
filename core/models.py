@@ -179,7 +179,9 @@ class AbsenceRequest(models.Model):
     dates = models.JSONField(
         default=list, blank=True, verbose_name="Selected dates (ISO)"
     )
-    cancelled_at = models.DateTimeField(null=True, blank=True, verbose_name="Cancelled by worker")
+    cancelled_at = models.DateTimeField(
+        null=True, blank=True, verbose_name="Cancelled by worker"
+    )
     sick_note_reminders_sent = models.PositiveSmallIntegerField(
         default=0, verbose_name="Sick note reminders sent"
     )
@@ -422,7 +424,9 @@ class ServiceRequest(models.Model):
     )
     created_at = models.DateTimeField(auto_now_add=True)
     decided_at = models.DateTimeField(null=True, blank=True)
-    cancelled_at = models.DateTimeField(null=True, blank=True, verbose_name="Cancelled by worker")
+    cancelled_at = models.DateTimeField(
+        null=True, blank=True, verbose_name="Cancelled by worker"
+    )
 
     class Meta:
         verbose_name = "Reporting to Administration/Accounting"
@@ -464,4 +468,3 @@ class SickLeaveDocument(models.Model):
 
     def __str__(self):
         return f"{self.filename} ({self.request})"
-

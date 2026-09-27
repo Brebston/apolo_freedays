@@ -12,15 +12,56 @@ import re
 from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
 
-NAME_RE = re.compile(r"^[A-Za-z\-]+$")  # те саме правило, що latin_name_validator у моделі
+NAME_RE = re.compile(
+    r"^[A-Za-z\-]+$"
+)  # те саме правило, що latin_name_validator у моделі
 MAX_TELEGRAM_ID = 2**63 - 1
 MAX_ROWS = 2000
 
 HEADER_ALIASES = {
-    "first_name": {"first_name", "firstname", "first name", "name", "imię", "imie", "ім'я", "імя", "ім’я", "имя"},
-    "last_name": {"last_name", "lastname", "last name", "surname", "nazwisko", "прізвище", "фамилия"},
-    "phone": {"phone", "phone_number", "telephone", "tel", "telefon", "numer telefonu", "телефон", "номер телефону", "номер телефона"},
-    "telegram_id": {"telegram_id", "telegram id", "telegram", "tg", "tg_id", "tg id", "id telegram", "телеграм", "telegram-id"},
+    "first_name": {
+        "first_name",
+        "firstname",
+        "first name",
+        "name",
+        "imię",
+        "imie",
+        "ім'я",
+        "імя",
+        "ім’я",
+        "имя",
+    },
+    "last_name": {
+        "last_name",
+        "lastname",
+        "last name",
+        "surname",
+        "nazwisko",
+        "прізвище",
+        "фамилия",
+    },
+    "phone": {
+        "phone",
+        "phone_number",
+        "telephone",
+        "tel",
+        "telefon",
+        "numer telefonu",
+        "телефон",
+        "номер телефону",
+        "номер телефона",
+    },
+    "telegram_id": {
+        "telegram_id",
+        "telegram id",
+        "telegram",
+        "tg",
+        "tg_id",
+        "tg id",
+        "id telegram",
+        "телеграм",
+        "telegram-id",
+    },
 }
 DEFAULT_ORDER = ["first_name", "last_name", "phone", "telegram_id"]
 
@@ -49,8 +90,13 @@ def _plausibility(text: str, encoding: str) -> int:
         # прочитаний як cp1251, дає поодинокі кириличні літери посеред латиниці.
         cyrillic = [("\u0400" <= ch <= "\u04ff") for ch in text]
         return sum(
-            1 for i, is_cyr in enumerate(cyrillic)
-            if is_cyr and ((i > 0 and cyrillic[i - 1]) or (i + 1 < len(cyrillic) and cyrillic[i + 1]))
+            1
+            for i, is_cyr in enumerate(cyrillic)
+            if is_cyr
+            and (
+                (i > 0 and cyrillic[i - 1])
+                or (i + 1 < len(cyrillic) and cyrillic[i + 1])
+            )
         )
     return sum(1 for ch in text if ch in POLISH_LETTERS)
 
@@ -63,7 +109,10 @@ def decode(raw: bytes) -> str:
     # Windows-1250 (польська) і Windows-1251 (кирилиця) — однобайтові, тож обидві
     # «успішно» декодують будь-що. Обираємо ту, що дає справжні літери.
     candidates = {}
-    for encoding in ("cp1250", "cp1251"):  # за нічиєї перемагає перша (агенція польська)
+    for encoding in (
+        "cp1250",
+        "cp1251",
+    ):  # за нічиєї перемагає перша (агенція польська)
         try:
             candidates[encoding] = raw.decode(encoding)
         except UnicodeDecodeError:
@@ -135,7 +184,9 @@ def parse_csv(raw: bytes) -> tuple[list[ParsedRow], list[str]]:
     if mapping is None:
         mapping = {key: index for index, key in enumerate(DEFAULT_ORDER)}
     if len(data_rows) > MAX_ROWS:
-        return [], [f"Too many rows: {len(data_rows)}. The limit is {MAX_ROWS} per file."]
+        return [], [
+            f"Too many rows: {len(data_rows)}. The limit is {MAX_ROWS} per file."
+        ]
 
     def cell(row, key):
         index = mapping.get(key)
@@ -155,11 +206,19 @@ def parse_csv(raw: bytes) -> tuple[list[ParsedRow], list[str]]:
             if not value:
                 item.errors.append(f"{label} is empty.")
             elif not NAME_RE.match(value):
-                item.errors.append(f"{label} “{value}” must use Latin letters and hyphens only (no spaces, digits or diacritics).")
+                item.errors.append(
+                    f"{label} “{value}” must use Latin letters and hyphens only (no spaces, digits or diacritics)."
+                )
         if item.telegram_id is None:
-            item.errors.append(f"Telegram ID “{raw_id}” is not a valid number." if raw_id else "Telegram ID is empty.")
+            item.errors.append(
+                f"Telegram ID “{raw_id}” is not a valid number."
+                if raw_id
+                else "Telegram ID is empty."
+            )
         elif item.telegram_id in seen_ids:
-            item.errors.append(f"Duplicate Telegram ID — already on line {seen_ids[item.telegram_id]}.")
+            item.errors.append(
+                f"Duplicate Telegram ID — already on line {seen_ids[item.telegram_id]}."
+            )
         else:
             seen_ids[item.telegram_id] = item.line
         if len(item.phone) > 32:
@@ -169,4 +228,6 @@ def parse_csv(raw: bytes) -> tuple[list[ParsedRow], list[str]]:
     return parsed, []
 
 
-TEMPLATE_CSV = "first_name;last_name;phone;telegram_id\nOksana;Shevchenko;+48511222333;359641501\n"
+TEMPLATE_CSV = (
+    "first_name;last_name;phone;telegram_id\nOksana;Shevchenko;+48511222333;359641501\n"
+)

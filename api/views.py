@@ -21,8 +21,14 @@ from api.auth import telegram_auth
 from core import services
 from core import sick_leave_files
 from core.models import (
-    AbsenceRequest, Project, Region, RequestDepartment, RequestStatus, RequestType,
-    ServiceRequest, SickLeaveDocument,
+    AbsenceRequest,
+    Project,
+    Region,
+    RequestDepartment,
+    RequestStatus,
+    RequestType,
+    ServiceRequest,
+    SickLeaveDocument,
 )
 from users.models import Language, User
 
@@ -112,15 +118,18 @@ def _service_payload(req: ServiceRequest) -> dict:
 
 # --- Профіль ---------------------------------------------------------------
 
+
 @require_GET
 @telegram_auth(require_access=False)
 def me(request):
     user = request.app_user
-    return JsonResponse({
-        "telegram_id": request.tg_user["id"],
-        "access": user is not None,
-        "user": _user_payload(user) if user else None,
-    })
+    return JsonResponse(
+        {
+            "telegram_id": request.tg_user["id"],
+            "access": user is not None,
+            "user": _user_payload(user) if user else None,
+        }
+    )
 
 
 @csrf_exempt
@@ -145,11 +154,17 @@ def balance(request):
     user = request.app_user
     today = timezone.localdate()
     recent_project_ids = list(
-        AbsenceRequest.objects.filter(user=user, created_at__date__gte=today.replace(day=1) - timedelta(days=180))
-        .order_by("-created_at").values_list("project_id", flat=True)
+        AbsenceRequest.objects.filter(
+            user=user, created_at__date__gte=today.replace(day=1) - timedelta(days=180)
+        )
+        .order_by("-created_at")
+        .values_list("project_id", flat=True)
     )
     ordered_ids = list(dict.fromkeys(recent_project_ids))[:3]
-    projects = {p.id: p for p in Project.objects.select_related("region").filter(id__in=ordered_ids)}
+    projects = {
+        p.id: p
+        for p in Project.objects.select_related("region").filter(id__in=ordered_ids)
+    }
 
     next_month = (today.replace(day=28) + timedelta(days=4)).replace(day=1)
     data = []
@@ -161,23 +176,35 @@ def balance(request):
             {
                 "year": d.year,
                 "month": d.month,
-                "used": services.used_dayoff_in_month(user.id, project.id, d.year, d.month),
+                "used": services.used_dayoff_in_month(
+                    user.id, project.id, d.year, d.month
+                ),
                 "limit": project.dayoff_limit,
             }
             for d in (today, next_month)
         ]
-        data.append({"project_id": project.id, "project": project.name, "region": project.region.name, "months": months})
+        data.append(
+            {
+                "project_id": project.id,
+                "project": project.name,
+                "region": project.region.name,
+                "months": months,
+            }
+        )
     return JsonResponse({"projects": data})
 
 
 # --- Довідники --------------------------------------------------------------
+
 
 @require_GET
 @telegram_auth()
 def regions(request):
     data = []
     for region in Region.objects.prefetch_related("projects").order_by("name"):
-        projects = [{"id": p.id, "name": p.name} for p in region.projects.all().order_by("name")]
+        projects = [
+            {"id": p.id, "name": p.name} for p in region.projects.all().order_by("name")
+        ]
         if projects:
             data.append({"id": region.id, "name": region.name, "projects": projects})
     return JsonResponse({"regions": data})
@@ -189,21 +216,31 @@ def coordinators(request):
     data = []
     for region in Region.objects.order_by("name"):
         people = (
-            User.objects.filter(is_staff=True, is_active=True, coordinated_projects__region=region)
-            .distinct().order_by("last_name", "first_name")
+            User.objects.filter(
+                is_staff=True, is_active=True, coordinated_projects__region=region
+            )
+            .distinct()
+            .order_by("last_name", "first_name")
         )
         if people:
-            data.append({
-                "region": region.name,
-                "people": [
-                    {"name": f"{u.last_name} {u.first_name}".strip(), "phone": u.phone, "email": u.email or ""}
-                    for u in people
-                ],
-            })
+            data.append(
+                {
+                    "region": region.name,
+                    "people": [
+                        {
+                            "name": f"{u.last_name} {u.first_name}".strip(),
+                            "phone": u.phone,
+                            "email": u.email or "",
+                        }
+                        for u in people
+                    ],
+                }
+            )
     return JsonResponse({"regions": data})
 
 
 # --- Календар і вихідні/L4 --------------------------------------------------
+
 
 @require_GET
 @telegram_auth()
@@ -233,21 +270,31 @@ def project_calendar(request, project_id: int):
             state = "past"
         elif d in mine:
             state = "mine"
-        elif is_dayoff and capacity[d] is not None and len(taken.get(d, ())) >= capacity[d]:
+        elif (
+            is_dayoff
+            and capacity[d] is not None
+            and len(taken.get(d, ())) >= capacity[d]
+        ):
             state = "full"
         else:
             state = "free"
         days.append({"date": d.isoformat(), "state": state})
 
-    return JsonResponse({
-        "year": year,
-        "month": month,
-        "today": today.isoformat(),
-        "limit": project.dayoff_limit if is_dayoff else services.L4_MAX_DAYS,
-        "limit_scope": "month" if is_dayoff else "request",
-        "used_in_month": sum(1 for kind in mine.values() if kind == RequestType.DAYOFF) if is_dayoff else 0,
-        "days": days,
-    })
+    return JsonResponse(
+        {
+            "year": year,
+            "month": month,
+            "today": today.isoformat(),
+            "limit": project.dayoff_limit if is_dayoff else services.L4_MAX_DAYS,
+            "limit_scope": "month" if is_dayoff else "request",
+            "used_in_month": (
+                sum(1 for kind in mine.values() if kind == RequestType.DAYOFF)
+                if is_dayoff
+                else 0
+            ),
+            "days": days,
+        }
+    )
 
 
 @csrf_exempt
@@ -260,7 +307,9 @@ def create_absence_request(request):
         return _error("bad_type")
 
     try:
-        dates = sorted({date.fromisoformat(value) for value in payload.get("dates", [])})
+        dates = sorted(
+            {date.fromisoformat(value) for value in payload.get("dates", [])}
+        )
     except (TypeError, ValueError):
         return _error("bad_dates")
     if not dates:
@@ -291,29 +340,42 @@ def create_absence_request(request):
             return _error("already_requested", dates=overlap)
 
         if request_type == RequestType.DAYOFF:
-            for (year, month), count in Counter((d.year, d.month) for d in dates).items():
+            for (year, month), count in Counter(
+                (d.year, d.month) for d in dates
+            ).items():
                 used = services.used_dayoff_in_month(user.id, project.id, year, month)
                 if used + count > project.dayoff_limit:
-                    return _error("month_limit", limit=project.dayoff_limit, used=used, month=f"{month:02d}.{year}")
+                    return _error(
+                        "month_limit",
+                        limit=project.dayoff_limit,
+                        used=used,
+                        month=f"{month:02d}.{year}",
+                    )
 
             taken = services.occupancy(project.id, dates[0], dates[-1])
             capacity = services.capacity_by_date(project, dates[0], dates[-1])
             full = [
-                d.isoformat() for d in dates
+                d.isoformat()
+                for d in dates
                 if capacity[d] is not None and len(taken.get(d, ())) >= capacity[d]
             ]
             if full:
                 return _error("date_full", dates=full)
 
         absence = AbsenceRequest.objects.create(
-            user=user, project=project, request_type=request_type,
-            start_date=dates[0], end_date=dates[-1], days_count=len(dates),
+            user=user,
+            project=project,
+            request_type=request_type,
+            start_date=dates[0],
+            end_date=dates[-1],
+            days_count=len(dates),
             dates=[d.isoformat() for d in dates],
         )
 
         def _notify():
             from api.tasks import notify_coordinators_new_absence
             from core.tasks import send_absence_request_email
+
             send_absence_request_email.delay(absence.id)
             notify_coordinators_new_absence.delay(absence.id)
 
@@ -323,6 +385,7 @@ def create_absence_request(request):
 
 
 # --- Лікарняний: прикріплення документів -----------------------------------
+
 
 @csrf_exempt
 @require_POST
@@ -344,24 +407,33 @@ def upload_sick_leave_documents(request, request_id: int):
     if absence.documents.count() + len(files) > sick_leave_files.MAX_FILES_PER_REQUEST:
         return _error("too_many_files", limit=sick_leave_files.MAX_FILES_PER_REQUEST)
     if sum(f.size for f in files) > sick_leave_files.MAX_UPLOAD_BYTES:
-        return _error("upload_too_large", limit_mb=sick_leave_files.MAX_UPLOAD_BYTES // (1024 * 1024))
+        return _error(
+            "upload_too_large",
+            limit_mb=sick_leave_files.MAX_UPLOAD_BYTES // (1024 * 1024),
+        )
 
     prepared = []
     for index, upload in enumerate(files, start=1):
         if upload.size > sick_leave_files.MAX_FILE_BYTES:
-            return _error("file_too_large", name=upload.name, limit_mb=sick_leave_files.MAX_FILE_BYTES // (1024 * 1024))
+            return _error(
+                "file_too_large",
+                name=upload.name,
+                limit_mb=sick_leave_files.MAX_FILE_BYTES // (1024 * 1024),
+            )
         content = upload.read()
         detected = sick_leave_files.detect_file_type(content[:32])
         if detected is None:
             return _error("file_type", name=upload.name)
         content_type, extension = detected
-        prepared.append(SickLeaveDocument(
-            request=absence,
-            filename=sick_leave_files.safe_filename(upload.name, extension, index),
-            content_type=content_type,
-            size=len(content),
-            content=content,
-        ))
+        prepared.append(
+            SickLeaveDocument(
+                request=absence,
+                filename=sick_leave_files.safe_filename(upload.name, extension, index),
+                content_type=content_type,
+                size=len(content),
+                content=content,
+            )
+        )
 
     with transaction.atomic():
         created = SickLeaveDocument.objects.bulk_create(prepared)
@@ -369,15 +441,21 @@ def upload_sick_leave_documents(request, request_id: int):
 
         def _notify():
             from core.tasks import send_sick_leave_email
+
             send_sick_leave_email.delay(absence.id, document_ids)
 
         transaction.on_commit(_notify)
 
-    absence = AbsenceRequest.objects.select_related("project", "project__region").prefetch_related("documents").get(id=absence.id)
+    absence = (
+        AbsenceRequest.objects.select_related("project", "project__region")
+        .prefetch_related("documents")
+        .get(id=absence.id)
+    )
     return JsonResponse({"request": _absence_payload(absence)}, status=201)
 
 
 # --- Зголошення до адміністрації / бухгалтерії -----------------------------
+
 
 @csrf_exempt
 @require_POST
@@ -394,10 +472,13 @@ def create_service_request(request):
     if len(text) > MAX_SERVICE_TEXT:
         return _error("text_too_long", limit=MAX_SERVICE_TEXT)
 
-    service_request = ServiceRequest.objects.create(user=request.app_user, request_type=request_type, text=text)
+    service_request = ServiceRequest.objects.create(
+        user=request.app_user, request_type=request_type, text=text
+    )
 
     def _notify():
         from core.tasks import send_service_request_email
+
         send_service_request_email.delay(service_request.id)
 
     transaction.on_commit(_notify)
@@ -415,7 +496,9 @@ def cancel_my_request(request, kind: str, request_id: int):
         with transaction.atomic():
             absence = (
                 AbsenceRequest.objects.select_for_update()
-                .select_related("project", "project__region").filter(id=request_id, user=user).first()
+                .select_related("project", "project__region")
+                .filter(id=request_id, user=user)
+                .first()
             )
             if absence is None:
                 return _error("not_found", 404)
@@ -427,15 +510,24 @@ def cancel_my_request(request, kind: str, request_id: int):
 
             def _notify():
                 from api.tasks import notify_absence_cancelled
+
                 notify_absence_cancelled.delay(absence.id)
 
             transaction.on_commit(_notify)
-        absence = AbsenceRequest.objects.select_related("project", "project__region").prefetch_related("documents").get(id=absence.id)
+        absence = (
+            AbsenceRequest.objects.select_related("project", "project__region")
+            .prefetch_related("documents")
+            .get(id=absence.id)
+        )
         return JsonResponse({"request": _absence_payload(absence)})
 
     if kind == "service":
         with transaction.atomic():
-            service_request = ServiceRequest.objects.select_for_update().filter(id=request_id, user=user).first()
+            service_request = (
+                ServiceRequest.objects.select_for_update()
+                .filter(id=request_id, user=user)
+                .first()
+            )
             if service_request is None:
                 return _error("not_found", 404)
             if service_request.status != RequestStatus.PENDING:
@@ -446,6 +538,7 @@ def cancel_my_request(request, kind: str, request_id: int):
 
             def _notify_service():
                 from api.tasks import notify_service_request_cancelled
+
                 notify_service_request_cancelled.delay(service_request.id)
 
             transaction.on_commit(_notify_service)
@@ -459,19 +552,29 @@ def cancel_my_request(request, kind: str, request_id: int):
 def my_requests(request):
     user = request.app_user
     absence = [
-        _absence_payload(r) for r in
-        AbsenceRequest.objects.select_related("project", "project__region").prefetch_related("documents")
-        .filter(user=user).order_by("-created_at")[:50]
+        _absence_payload(r)
+        for r in AbsenceRequest.objects.select_related("project", "project__region")
+        .prefetch_related("documents")
+        .filter(user=user)
+        .order_by("-created_at")[:50]
     ]
-    service = [_service_payload(r) for r in ServiceRequest.objects.filter(user=user).order_by("-created_at")[:50]]
-    items = sorted(absence + service, key=lambda item: item["created_at"], reverse=True)[:50]
+    service = [
+        _service_payload(r)
+        for r in ServiceRequest.objects.filter(user=user).order_by("-created_at")[:50]
+    ]
+    items = sorted(
+        absence + service, key=lambda item: item["created_at"], reverse=True
+    )[:50]
     return JsonResponse({"requests": items})
 
 
 # --- Панель координатора ----------------------------------------------------
 
+
 def _coordinator_scope(user: User):
-    qs = AbsenceRequest.objects.select_related("user", "project", "project__region").prefetch_related("documents")
+    qs = AbsenceRequest.objects.select_related(
+        "user", "project", "project__region"
+    ).prefetch_related("documents")
     if user.is_superuser:
         return qs
     return qs.filter(project__coordinators=user)
@@ -486,7 +589,9 @@ def coordinator_requests(request):
         qs = qs.filter(status=RequestStatus.PENDING)
     elif status_filter == "processed":
         qs = qs.filter(~Q(status=RequestStatus.PENDING))
-    items = [_absence_payload(r, with_worker=True) for r in qs.order_by("-created_at")[:100]]
+    items = [
+        _absence_payload(r, with_worker=True) for r in qs.order_by("-created_at")[:100]
+    ]
     return JsonResponse({"requests": items})
 
 
@@ -499,7 +604,12 @@ def coordinator_decide(request, request_id: int):
         return _error("bad_status")
 
     with transaction.atomic():
-        absence = _coordinator_scope(request.app_user).select_for_update(of=("self",)).filter(id=request_id).first()
+        absence = (
+            _coordinator_scope(request.app_user)
+            .select_for_update(of=("self",))
+            .filter(id=request_id)
+            .first()
+        )
         if absence is None:
             return _error("not_found", 404)
         if absence.status != RequestStatus.PENDING:
@@ -514,6 +624,7 @@ def coordinator_decide(request, request_id: int):
 
         def _notify():
             from api.tasks import notify_absence_decision
+
             notify_absence_decision.delay(absence.id)
 
         transaction.on_commit(_notify)

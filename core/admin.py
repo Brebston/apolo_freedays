@@ -82,7 +82,9 @@ class SickLeaveDocumentInline(admin.TabularInline):
     def download(self, obj):
         if obj.content is None:
             return f"{obj.filename} (removed after retention period)"
-        url = reverse("admin:core_absencerequest_document_download", args=[obj.request_id, obj.id])
+        url = reverse(
+            "admin:core_absencerequest_document_download", args=[obj.request_id, obj.id]
+        )
         return format_html('<a href="{}">⬇ {}</a>', url, obj.filename)
 
     @admin.display(description="Size")
@@ -117,7 +119,9 @@ class AbsenceRequestAdmin(admin.ModelAdmin):
             raise PermissionDenied
         today = timezone.localdate()
         default_from = (today.replace(day=1) - timedelta(days=330)).replace(day=1)
-        default_to = (today.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
+        default_to = (today.replace(day=28) + timedelta(days=4)).replace(
+            day=1
+        ) - timedelta(days=1)
         context = {
             **self.admin_site.each_context(request),
             "opts": self.model._meta,
@@ -129,26 +133,41 @@ class AbsenceRequestAdmin(admin.ModelAdmin):
             "selected_lang": request.GET.get("lang", "en"),
         }
         if "download" not in request.GET:
-            return TemplateResponse(request, "admin/core/absencerequest/statistics_export.html", context)
+            return TemplateResponse(
+                request, "admin/core/absencerequest/statistics_export.html", context
+            )
 
         try:
             date_from = date.fromisoformat(context["date_from"])
             date_to = date.fromisoformat(context["date_to"])
         except ValueError:
             context["error"] = "Enter valid dates."
-            return TemplateResponse(request, "admin/core/absencerequest/statistics_export.html", context)
+            return TemplateResponse(
+                request, "admin/core/absencerequest/statistics_export.html", context
+            )
         if date_from > date_to:
             context["error"] = "The start date must be before the end date."
-            return TemplateResponse(request, "admin/core/absencerequest/statistics_export.html", context)
+            return TemplateResponse(
+                request, "admin/core/absencerequest/statistics_export.html", context
+            )
         if (date_to - date_from).days > 3 * 366:
             context["error"] = "The period can be at most 3 years."
-            return TemplateResponse(request, "admin/core/absencerequest/statistics_export.html", context)
+            return TemplateResponse(
+                request, "admin/core/absencerequest/statistics_export.html", context
+            )
 
-        project = Project.objects.filter(id=context["selected_project"]).first() if context["selected_project"].isdigit() else None
-        workbook = build_statistics_workbook(date_from, date_to, project, context["selected_lang"])
+        project = (
+            Project.objects.filter(id=context["selected_project"]).first()
+            if context["selected_project"].isdigit()
+            else None
+        )
+        workbook = build_statistics_workbook(
+            date_from, date_to, project, context["selected_lang"]
+        )
         filename = f"absence_statistics_{date_from:%Y-%m-%d}_{date_to:%Y-%m-%d}.xlsx"
         response = HttpResponse(
-            workbook, content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            workbook,
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
         response["Content-Disposition"] = content_disposition_header(True, filename)
         return response
@@ -156,7 +175,12 @@ class AbsenceRequestAdmin(admin.ModelAdmin):
     def download_document(self, request, request_id, document_id):
         if not self.has_view_permission(request):
             raise PermissionDenied
-        doc = get_object_or_404(SickLeaveDocument, id=document_id, request_id=request_id, content__isnull=False)
+        doc = get_object_or_404(
+            SickLeaveDocument,
+            id=document_id,
+            request_id=request_id,
+            content__isnull=False,
+        )
         response = HttpResponse(bytes(doc.content), content_type=doc.content_type)
         response["Content-Disposition"] = content_disposition_header(True, doc.filename)
         return response
@@ -298,7 +322,6 @@ class ServiceRequestAdmin(admin.ModelAdmin):
     date_hierarchy = "created_at"
 
 
-
 def build_statistics_workbook(date_from, date_to, project, lang):
     """Збирає дані з бази у прості структури і передає в core.stats_export."""
     from core.services import request_dates
@@ -310,7 +333,8 @@ def build_statistics_workbook(date_from, date_to, project, lang):
         .filter(start_date__lte=date_to, end_date__gte=date_from)
     )
     service_qs = ServiceRequest.objects.select_related("user").filter(
-        created_at__date__gte=date_from, created_at__date__lte=date_to,
+        created_at__date__gte=date_from,
+        created_at__date__lte=date_to,
     )
     if project is not None:
         absences_qs = absences_qs.filter(project=project)
@@ -318,23 +342,31 @@ def build_statistics_workbook(date_from, date_to, project, lang):
     absences, days = [], []
     for req in absences_qs:
         worker = f"{req.user.last_name} {req.user.first_name}".strip()
-        absences.append({
-            "id": req.id,
-            "created": timezone.localtime(req.created_at).replace(tzinfo=None),
-            "worker": worker,
-            "project": req.project.name,
-            "region": req.project.region.name,
-            "type": req.request_type,
-            "status": req.status,
-            "start": req.start_date,
-            "end": req.end_date,
-            "days": req.days_count,
-            "sick_note": bool(req.documents.all()),
-        })
+        absences.append(
+            {
+                "id": req.id,
+                "created": timezone.localtime(req.created_at).replace(tzinfo=None),
+                "worker": worker,
+                "project": req.project.name,
+                "region": req.project.region.name,
+                "type": req.request_type,
+                "status": req.status,
+                "start": req.start_date,
+                "end": req.end_date,
+                "days": req.days_count,
+                "sick_note": bool(req.documents.all()),
+            }
+        )
         if req.status not in INACTIVE_STATUSES:
             days.extend(
-                {"date": d, "worker": worker, "project": req.project.name, "type": req.request_type}
-                for d in request_dates(req) if date_from <= d <= date_to
+                {
+                    "date": d,
+                    "worker": worker,
+                    "project": req.project.name,
+                    "type": req.request_type,
+                }
+                for d in request_dates(req)
+                if date_from <= d <= date_to
             )
 
     service = [
@@ -349,6 +381,11 @@ def build_statistics_workbook(date_from, date_to, project, lang):
         for sr in service_qs
     ]
     return build_workbook(
-        absences=absences, days=days, service_requests=service, date_from=date_from, date_to=date_to,
-        project_label=project.name if project else None, lang=lang,
+        absences=absences,
+        days=days,
+        service_requests=service,
+        date_from=date_from,
+        date_to=date_to,
+        project_label=project.name if project else None,
+        lang=lang,
     )

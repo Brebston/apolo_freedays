@@ -3,7 +3,14 @@ from datetime import date
 from asgiref.sync import sync_to_async
 from django.utils import timezone
 
-from core.models import AbsenceRequest, Project, Region, RequestStatus, RequestType, INACTIVE_STATUSES
+from core.models import (
+    AbsenceRequest,
+    Project,
+    Region,
+    RequestStatus,
+    RequestType,
+    INACTIVE_STATUSES,
+)
 from users.models import User
 
 # ---------------------------------------------------------------------------
