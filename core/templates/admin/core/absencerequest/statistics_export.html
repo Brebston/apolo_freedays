@@ -1,0 +1,56 @@
+{% extends "admin/base_site.html" %}
+
+{% block extrastyle %}{{ block.super }}
+<style>
+  .stats-card { max-width: 720px; padding: 20px 24px; border: 1px solid var(--hairline-color); border-radius: 8px; }
+  .stats-card h2 { margin-top: 0; }
+  .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px 20px; margin: 16px 0 20px; }
+  .stats-grid label { display: block; font-weight: 600; margin-bottom: 6px; }
+  .stats-grid input, .stats-grid select { width: 100%; box-sizing: border-box; }
+  .stats-help { color: var(--body-quiet-color); line-height: 1.6; }
+  .stats-error { color: #c0392b; font-weight: 600; }
+</style>
+{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+  <a href="{% url 'admin:index' %}">Home</a> ›
+  <a href="{% url 'admin:core_absencerequest_changelist' %}">{{ opts.verbose_name_plural|capfirst }}</a> ›
+  Statistics export
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="stats-card">
+  <h2>Absence statistics — Excel report</h2>
+  <p class="stats-help">
+    The report contains a summary with key figures and charts, breakdowns by project, month, weekday and worker,
+    requests to administration and accounting, and the full source data. Absence days count every day of approved
+    and pending requests inside the period; rejected and cancelled requests appear only in the status statistics.
+  </p>
+  <form method="get">
+    <input type="hidden" name="download" value="1">
+    <div class="stats-grid">
+      <div><label for="date_from">From</label><input type="date" id="date_from" name="date_from" value="{{ date_from }}" required></div>
+      <div><label for="date_to">To</label><input type="date" id="date_to" name="date_to" value="{{ date_to }}" required></div>
+      <div>
+        <label for="project">Project</label>
+        <select id="project" name="project">
+          <option value="">All projects</option>
+          {% for p in projects %}<option value="{{ p.id }}"{% if selected_project == p.id|stringformat:"s" %} selected{% endif %}>{{ p.name }} ({{ p.region.name }})</option>{% endfor %}
+        </select>
+      </div>
+      <div>
+        <label for="lang">Report language</label>
+        <select id="lang" name="lang">
+          <option value="en"{% if selected_lang == "en" %} selected{% endif %}>English</option>
+          <option value="pl"{% if selected_lang == "pl" %} selected{% endif %}>Polski</option>
+          <option value="uk"{% if selected_lang == "uk" %} selected{% endif %}>Українська</option>
+        </select>
+      </div>
+    </div>
+    {% if error %}<p class="stats-error">{{ error }}</p>{% endif %}
+    <input type="submit" class="default" value="⬇ Download Excel report">
+  </form>
+</div>
+{% endblock %}

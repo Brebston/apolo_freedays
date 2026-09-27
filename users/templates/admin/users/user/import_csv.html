@@ -1,0 +1,104 @@
+{% extends "admin/base_site.html" %}
+{% load static %}
+
+{% block extrastyle %}{{ block.super }}
+<style>
+  .import-card { max-width: 980px; padding: 20px 24px; margin-bottom: 20px; border: 1px solid var(--hairline-color); border-radius: 8px; background: var(--body-bg); }
+  .import-card h2 { margin-top: 0; }
+  .import-help { color: var(--body-quiet-color); line-height: 1.6; }
+  .import-help code { font-size: 13px; }
+  .import-summary { display: flex; flex-wrap: wrap; gap: 10px; margin: 12px 0 18px; }
+  .import-pill { padding: 6px 12px; border-radius: 999px; font-weight: 600; font-size: 13px; background: var(--darkened-bg); }
+  .import-pill.create { color: #1e7e45; }
+  .import-pill.update { color: #1f5fbf; }
+  .import-pill.error { color: #c0392b; }
+  table.import-table { width: 100%; }
+  table.import-table td, table.import-table th { vertical-align: top; }
+  .action-create { color: #1e7e45; font-weight: 600; }
+  .action-update { color: #1f5fbf; font-weight: 600; }
+  .action-unchanged, .action-skip { color: var(--body-quiet-color); }
+  .action-error { color: #c0392b; font-weight: 600; }
+  .row-errors { margin: 4px 0 0; padding-left: 18px; color: #c0392b; }
+  .upload-error { color: #c0392b; font-weight: 600; }
+</style>
+{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+  <a href="{% url 'admin:index' %}">Home</a> ›
+  <a href="{% url 'admin:users_user_changelist' %}">Users</a> ›
+  Import from CSV
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="import-card">
+  <h2>1. Upload a CSV file</h2>
+  <p class="import-help">
+    Columns: <code>first_name</code>, <code>last_name</code>, <code>phone</code>, <code>telegram_id</code>.
+    Headers in Polish, Ukrainian, English or Russian are recognised (e.g. <code>Imię;Nazwisko;Telefon;Telegram ID</code>);
+    without a header row this column order is assumed. Separators <code>;</code> <code>,</code> or tab, and files saved by Excel,
+    work as they are. Names must use Latin letters and hyphens only — the same rule as in the user form.
+    Imported workers get access to the bot immediately; no password is set.
+    <br><a href="{% url 'admin:users_user_import_csv_template' %}">⬇ Download a template CSV</a>
+  </p>
+  <form method="post" enctype="multipart/form-data">
+    {% csrf_token %}
+    <p><input type="file" name="file" accept=".csv,text/csv" required></p>
+    <p><label><input type="checkbox" name="update_existing" checked>
+      Update name and phone of workers who already exist (matched by Telegram ID)</label></p>
+    {% if upload_error %}<p class="upload-error">{{ upload_error }}</p>{% endif %}
+    <input type="submit" value="Preview import" class="default">
+  </form>
+</div>
+
+{% if plan %}
+<div class="import-card">
+  <h2>2. Check the preview — {{ filename }}</h2>
+  <div class="import-summary">
+    <span class="import-pill create">New: {{ counts.create }}</span>
+    <span class="import-pill update">To update: {{ counts.update }}</span>
+    <span class="import-pill">Unchanged: {{ counts.unchanged }}</span>
+    {% if counts.skip %}<span class="import-pill">Existing, skipped: {{ counts.skip }}</span>{% endif %}
+    <span class="import-pill error">Errors: {{ counts.error }}</span>
+  </div>
+  {% if counts.error %}
+    <p class="import-help">Rows with errors are not imported. Fix them in the file and upload it again, or import the valid rows now.</p>
+  {% endif %}
+
+  <table class="import-table">
+    <thead><tr><th>Line</th><th>First name</th><th>Last name</th><th>Phone</th><th>Telegram ID</th><th>Result</th></tr></thead>
+    <tbody>
+    {% for item in plan %}
+      <tr>
+        <td>{{ item.line }}</td>
+        <td>{{ item.first_name }}</td>
+        <td>{{ item.last_name }}</td>
+        <td>{{ item.phone|default:"—" }}</td>
+        <td>{{ item.telegram_id|default:"—" }}</td>
+        <td>
+          {% if item.action == "create" %}<span class="action-create">Will be created</span>
+          {% elif item.action == "update" %}<span class="action-update">Will be updated</span><br><small>now: {{ item.current }}</small>
+          {% elif item.action == "unchanged" %}<span class="action-unchanged">Already up to date</span>
+          {% elif item.action == "skip" %}<span class="action-skip">Exists, skipped</span>
+          {% else %}<span class="action-error">Error</span>
+            <ul class="row-errors">{% for e in item.errors %}<li>{{ e }}</li>{% endfor %}</ul>
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+
+  {% if can_import %}
+  <form method="post" style="margin-top:18px">
+    {% csrf_token %}
+    <input type="hidden" name="step" value="confirm">
+    <input type="submit" class="default" value="Import {{ counts.create|add:counts.update }} worker(s)">
+  </form>
+  {% else %}
+    <p class="import-help" style="margin-top:18px">Nothing to import.</p>
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}
