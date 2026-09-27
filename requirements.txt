@@ -9,3 +9,5 @@ gunicorn==21.2.0
 whitenoise==6.6.0
 requests==2.31.0
 django-anymail>=15,<16
+openpyxl>=3.1,<4
+sentry-sdk[django,celery]>=2.0,<3

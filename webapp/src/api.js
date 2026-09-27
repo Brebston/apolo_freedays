@@ -70,6 +70,8 @@ export const api = {
   createAbsence: (payload) => request('/absence-requests/', { method: 'POST', body: payload }),
   createService: (payload) => request('/service-requests/', { method: 'POST', body: payload }),
   myRequests: () => request('/my-requests/'),
+  cancelRequest: (kind, id) => request(`/my-requests/${kind}/${id}/cancel/`, { method: 'POST' }),
+  balance: () => request('/balance/'),
   coordinatorRequests: (filter) => request(`/coordinator/requests/?filter=${filter}`),
   uploadSickLeave: (requestId, files, onProgress) => upload(`/absence-requests/${requestId}/documents/`, files, onProgress),
   decide: (id, status) => request(`/coordinator/requests/${id}/decide/`, { method: 'POST', body: { status } }),

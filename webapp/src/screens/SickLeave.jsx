@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 
 import { api } from '../api'
+import { CancelButton } from '../components/CancelButton'
 import { DateChips, Notice, Row, Screen, Section, StatusChip } from '../components/ui'
 import { apiErrorText, useApp, useScreenState } from '../context'
 import { ACCEPT, MAX_FILE_BYTES, MAX_FILES_PER_UPLOAD, formatSize, isImage, prepareFile } from '../files'
@@ -147,7 +148,7 @@ export function SickLeave({ request: initialRequest }) {
         </Section>
       )}
 
-      {!busy && files.length < MAX_FILES_PER_UPLOAD && (
+      {request.status !== 'cancelled' && !busy && files.length < MAX_FILES_PER_UPLOAD && (
         <>
           <button type="button" className="picker" onClick={() => inputRef.current?.click()}>
             <span className="picker-icon" aria-hidden="true">
@@ -177,6 +178,12 @@ export function SickLeave({ request: initialRequest }) {
       )}
 
       <Notice tone="error">{error}</Notice>
+
+      {files.length === 0 && (
+        <div className="secondary-action">
+          <CancelButton item={request} onCancelled={setRequest} />
+        </div>
+      )}
 
       {files.length > 0 && <MainAction text={mainText} loading={busy} onClick={send} />}
       {files.length === 0 && phase === 'done' && <MainAction text={t('done')} onClick={nav.pop} />}

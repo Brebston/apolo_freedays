@@ -248,6 +248,24 @@ TEXTS = {
         "en": "✅ Approved",
         "ru": "✅ Подтверждено",
     },
+    "status_cancelled": {
+        "uk": "Скасовано",
+        "pl": "Anulowano",
+        "en": "Cancelled",
+        "ru": "Отменено",
+    },
+    "request_cancelled_coordinator": {
+        "uk": "❌ {name} скасував(ла) зголошення ({project}, {start} — {end}). Рішення вже не потрібне.",
+        "pl": "❌ {name} anulował(a) zgłoszenie ({project}, {start} — {end}). Decyzja nie jest już potrzebna.",
+        "en": "❌ {name} cancelled the request ({project}, {start} — {end}). No decision is needed.",
+        "ru": "❌ {name} отменил(а) заявку ({project}, {start} — {end}). Решение больше не нужно.",
+    },
+    "l4_missing_document_reminder": {
+        "uk": "📎 Нагадування: до лікарняного {start}–{end} ({project}) ще не прикріплено документ. Відкрийте застосунок → «Мої зголошення» → цей лікарняний і сфотографуйте або завантажте його — файл одразу піде координатору.",
+        "pl": "📎 Przypomnienie: do zwolnienia {start}–{end} ({project}) nie dołączono jeszcze dokumentu. Otwórz aplikację → „Moje zgłoszenia” → to L4 i zrób zdjęcie lub wgraj plik — trafi od razu do koordynatora.",
+        "en": "📎 Reminder: your sick leave {start}–{end} ({project}) still has no document attached. Open the app → “My requests” → this sick leave, and take a photo or upload the file — it goes straight to your coordinator.",
+        "ru": "📎 Напоминание: к больничному {start}–{end} ({project}) ещё не прикреплён документ. Откройте приложение → «Мои заявки» → этот больничный и сфотографируйте или загрузите его — файл сразу уйдёт координатору.",
+    },
     "status_rejected": {
         "uk": "❌ Відхилено",
         "pl": "❌ Odrzucono",
