@@ -90,7 +90,11 @@ class UserAdmin(DjangoUserAdmin):
 
     def get_urls(self):
         custom = [
-            path("import-csv/", self.admin_site.admin_view(self.import_csv), name="users_user_import_csv"),
+            path(
+                "import-csv/",
+                self.admin_site.admin_view(self.import_csv),
+                name="users_user_import_csv",
+            ),
             path(
                 "import-csv/template/",
                 self.admin_site.admin_view(self.import_csv_template),
@@ -102,31 +106,44 @@ class UserAdmin(DjangoUserAdmin):
     def import_csv(self, request):
         if not self.has_add_permission(request):
             raise PermissionDenied
-        context = {**self.admin_site.each_context(request), "opts": self.model._meta, "title": "Import workers from CSV"}
+        context = {
+            **self.admin_site.each_context(request),
+            "opts": self.model._meta,
+            "title": "Import workers from CSV",
+        }
 
         if request.method == "POST" and request.POST.get("step") == "confirm":
             stored = request.session.get(SESSION_KEY)
             if not stored:
-                messages.error(request, "The preview has expired. Please upload the file again.")
+                messages.error(
+                    request, "The preview has expired. Please upload the file again."
+                )
                 return redirect("admin:users_user_import_csv")
             created = updated = 0
             with transaction.atomic():
                 for item in stored["plan"]:
                     if item["action"] == "create":
                         user = User(
-                            first_name=item["first_name"], last_name=item["last_name"],
-                            phone=item["phone"], telegram_id=item["telegram_id"], is_active=True,
+                            first_name=item["first_name"],
+                            last_name=item["last_name"],
+                            phone=item["phone"],
+                            telegram_id=item["telegram_id"],
+                            is_active=True,
                         )
                         user.set_unusable_password()
                         user.save()
                         created += 1
                     elif item["action"] == "update":
                         User.objects.filter(telegram_id=item["telegram_id"]).update(
-                            first_name=item["first_name"], last_name=item["last_name"], phone=item["phone"],
+                            first_name=item["first_name"],
+                            last_name=item["last_name"],
+                            phone=item["phone"],
                         )
                         updated += 1
             del request.session[SESSION_KEY]
-            messages.success(request, f"Import finished: {created} created, {updated} updated.")
+            messages.success(
+                request, f"Import finished: {created} created, {updated} updated."
+            )
             return redirect("admin:users_user_changelist")
 
         if request.method == "POST":
@@ -143,15 +160,27 @@ class UserAdmin(DjangoUserAdmin):
                     update_existing = bool(request.POST.get("update_existing"))
                     plan = _plan_rows(parsed, update_existing)
                     request.session[SESSION_KEY] = {"plan": plan}
-                    counts = {key: sum(1 for i in plan if i["action"] == key)
-                              for key in ("create", "update", "unchanged", "skip", "error")}
-                    context.update({"plan": plan, "counts": counts, "filename": upload.name,
-                                    "can_import": counts["create"] + counts["update"] > 0})
+                    counts = {
+                        key: sum(1 for i in plan if i["action"] == key)
+                        for key in ("create", "update", "unchanged", "skip", "error")
+                    }
+                    context.update(
+                        {
+                            "plan": plan,
+                            "counts": counts,
+                            "filename": upload.name,
+                            "can_import": counts["create"] + counts["update"] > 0,
+                        }
+                    )
         return TemplateResponse(request, "admin/users/user/import_csv.html", context)
 
     def import_csv_template(self, request):
-        response = HttpResponse("\ufeff" + TEMPLATE_CSV, content_type="text/csv; charset=utf-8")
-        response["Content-Disposition"] = 'attachment; filename="workers_import_template.csv"'
+        response = HttpResponse(
+            "\ufeff" + TEMPLATE_CSV, content_type="text/csv; charset=utf-8"
+        )
+        response["Content-Disposition"] = (
+            'attachment; filename="workers_import_template.csv"'
+        )
         return response
 
 
@@ -168,15 +197,25 @@ def _plan_rows(parsed, update_existing):
     plan = []
     for row in parsed:
         item = {
-            "line": row.line, "first_name": row.first_name, "last_name": row.last_name,
-            "phone": row.phone, "telegram_id": row.telegram_id, "errors": row.errors,
+            "line": row.line,
+            "first_name": row.first_name,
+            "last_name": row.last_name,
+            "phone": row.phone,
+            "telegram_id": row.telegram_id,
+            "errors": row.errors,
         }
         if not row.ok:
             item["action"] = "error"
         elif row.telegram_id in existing:
             user = existing[row.telegram_id]
-            same = (user.first_name, user.last_name, user.phone) == (row.first_name, row.last_name, row.phone)
-            item["action"] = "unchanged" if same else ("update" if update_existing else "skip")
+            same = (user.first_name, user.last_name, user.phone) == (
+                row.first_name,
+                row.last_name,
+                row.phone,
+            )
+            item["action"] = (
+                "unchanged" if same else ("update" if update_existing else "skip")
+            )
             item["current"] = f"{user.last_name} {user.first_name} {user.phone}".strip()
         else:
             item["action"] = "create"

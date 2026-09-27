@@ -1,458 +1,490 @@
-# apolo_freedays
+# Apolo — Absence Tracking for Staffing Agencies
 
-Telegram bot and Django Admin for tracking employee absences at a Polish staffing agency: submitting, moderating, and automatically notifying about days off, sick leave (L4), and requests to administration or accounting.
+[![CI](https://github.com/Brebston/apolo_freedays/actions/workflows/ci.yml/badge.svg)](https://github.com/Brebston/apolo_freedays/actions/workflows/ci.yml)
+![Python](https://img.shields.io/badge/python-3.12-blue)
+![Django](https://img.shields.io/badge/django-5.0-green)
+![React](https://img.shields.io/badge/react-18-61dafb)
 
-**Stack:** Python 3.12 · Django 5 · aiogram 3.x · PostgreSQL · Celery + Celery Beat + Redis · Docker Compose · GitHub Actions CI
+A Telegram Mini App and bot for a Polish staffing agency. Workers request days off, report sick leave (L4) and attach the sick note, and send questions to administration or accounting — straight from Telegram, in Ukrainian, Polish, English or Russian. Coordinators decide in one tap; administrators manage everything in Django Admin.
 
----
+**Languages:** English · [Українська](README_UA.md)
 
-## Table of Contents
+## Contents
 
-- [Overview](#overview)
-- [Architecture](#architecture)
-- [Project Structure](#project-structure)
 - [Features](#features)
-- [Quick Start (Docker)](#quick-start-docker)
-- [Local Setup (without Docker)](#local-setup-without-docker)
-- [Environment Variables](#environment-variables)
-- [Django Admin — Entities](#django-admin--entities)
-- [Custom Function Reference](#custom-function-reference)
-- [Bot Business Logic (Flow)](#bot-business-logic-flow)
-- [Bot Access Control](#bot-access-control)
-- [Day-Off Limits](#day-off-limits)
-- [Service Requests (Administration / Accounting)](#service-requests-administration--accounting)
-- [Broadcast Messages](#broadcast-messages)
-- [Absence-Request Email Notifications](#absence-request-email-notifications)
-- [Database Migrations](#database-migrations)
-- [Continuous Integration (CI)](#continuous-integration-ci)
-- [Localization](#localization)
-- [Security](#security)
-- [Development (Hot Reload)](#development-hot-reload)
+- [Business rules](#business-rules)
+- [Architecture](#architecture)
+- [Tech stack](#tech-stack)
+- [Getting started](#getting-started)
+- [Configuration](#configuration)
+- [Deployment](#deployment)
+- [Django Admin](#django-admin)
+- [Operations](#operations)
+- [Security and privacy](#security-and-privacy)
+- [Development](#development)
 - [Troubleshooting](#troubleshooting)
 - [Roadmap](#roadmap)
 
----
+## Features
 
-## Overview
+### For workers (Telegram Mini App)
 
-The system consists of two parts sharing a single PostgreSQL database:
+- **Access by Telegram ID only.** No registration or passwords: an administrator adds the worker, and the app opens. Anyone else sees their Telegram ID and a button to send it to a coordinator.
+- **Days off** on a calendar that shows, before you tap, which days are fully booked and which you have already requested. The monthly limit is shown as a row of dots that fills as you select days.
+- **Sick leave (L4)** with the sick note attached as a photo or PDF: the file is emailed to the coordinator automatically. Photos are compressed on the phone before upload (a 5.7 MB photo becomes ~0.8 MB).
+- **Reminders to attach the sick note** — on the confirmation screen, on the home screen, and as a bot message two days later if the document is still missing (up to three times).
+- **Requests to administration** (documents: insurance certificate, *załącznik*, …) and **to accounting** (salary questions).
+- **Remaining days off** for the current and next month on the home screen.
+- **Cancel your own request** — any pending one, or an approved day off that has not started yet.
+- **My requests** — every request with its status in one list.
 
-1. **Telegram bot** (`aiogram 3.x`) — interface for workers (submitting requests) and coordinators (moderation).
-2. **Django Admin** — web panel for the super admin: managing regions, projects, limits, user access, email recipients, and ad-hoc Telegram broadcast messages.
+### For coordinators
 
-The bot talks to the Django ORM directly (wrapped in `sync_to_async`), with no separate REST API — both components live in the same Django project and share the same models. There is also one public (no-login) URL — `/requests/<token>/<approve|reject>/` — for deciding administration/accounting requests directly from an email.
+- A push notification for every new request with **Approve / Reject** buttons right in the chat — or decide in the coordinator panel of the app. Sick leave (L4) cannot be rejected.
+- When a worker cancels, the decision buttons disappear from the original notification.
+- Every request and sick note also arrives by **email** (Polish HTML template).
 
-**Important:** there is no self-service registration in the bot. Access is granted exclusively by an administrator through Django Admin, based on Telegram ID.
+### For administrators (Django Admin)
+
+- **Workers:** add one by one, or **bulk-import from CSV** with a row-by-row preview. Excel files in Polish or Cyrillic encodings and headers in four languages are recognised.
+- **Projects and limits:** monthly day-off limit per worker, maximum people off per day, and overrides for specific dates.
+- **Statistics in Excel:** eight sheets and six charts (by project, month, weekday and worker), in English, Polish or Ukrainian. Every figure is a live formula over the source data.
+- **Broadcasts** to all workers or selected ones — one-off or recurring (daily, weekly, monthly), with an emoji picker.
+- **Departments:** who receives administration and accounting requests. Decisions are made by clicking a button in the email.
+- **Sick notes:** view and download attached files on the request page.
+
+## Business rules
+
+These are the rules the system enforces. Limits and permissions are always checked on the server; the calendar in the app only shows them in advance.
+
+### Access
+
+- `/start` (and the **🌐 Language** button) always asks for the language first, then looks the user up by Telegram ID.
+- **Found and Active** → the main menu. **Not found or not Active** → an "access denied" message with a **Get my Telegram ID** button that produces a ready-to-forward text; the menu shrinks to the language button only.
+- Access is re-checked on every action, not just on `/start`, so unchecking **Active** takes effect immediately. Request history is kept.
+- Workers use both the classic bot menu and the Mini App (menu button **Apolo**) — both lead to the same data.
+
+### Days off and sick leave (L4)
+
+- Past dates cannot be selected. A sick leave covers at most **31 days** per request.
+- **Monthly limit** (`Project → day-off limit`): the days off a worker has in a calendar month in that project — pending and approved requests plus the days being selected — cannot exceed the limit. Rejected and cancelled requests do not count.
+- **People per day:** a staffing limit for that specific date wins; otherwise the project's general limit applies; if neither is set, there is no limit. Pending and approved requests take a place; rejected and cancelled ones do not.
+- In the Mini App a worker cannot request a date they already have a request for, and simultaneous submissions to one project are processed one at a time, so two people cannot take the last free place together.
+- After submitting, all coordinators of the project get a push notification with decision buttons, and the project's email recipients get an email.
+
+### Decisions
+
+- A coordinator is a user with **Staff** who is listed among the project's coordinators. The coordinator panel shows only their projects' requests; a superuser sees all.
+- Sick leave (L4) can only be approved.
+- Only a pending request can be decided. The first decision wins — a second click shows "already processed".
+- The worker gets a push notification with the decision.
+
+### Cancellation
+
+- A worker can cancel any **pending** request, or an **approved day off that has not started yet**. Started sick leave and processed administration/accounting requests cannot be cancelled.
+- On cancellation the decision buttons disappear from the coordinators' notifications, they get a reply saying the request was cancelled, and the project's email recipients get an *Anulowano* email. The freed days no longer count toward any limit.
+
+### Requests to administration and accounting
+
+- Free text up to 2,000 characters; no project or dates.
+- Emailed to the department's responsible people (**Departmental points of contact**, To/CC). Their current profile email is used.
+- The email has **Zaakceptuj / Odrzuć** buttons. The link opens a confirmation page and the decision is applied only after confirming (a `POST`), so mail scanners cannot trigger it. Only a pending request can be decided; after that — or after the worker cancels — the link shows "already processed".
+- The worker gets a push notification with the decision.
+
+### Sick notes
+
+- PDF or images, up to **5 files per upload**, **10 per request**, **10 MB per file** and **25 MB per upload**. The type is checked by file content.
+- Emailed to the same recipients as the request. A later upload arrives as an *Uzupełnienie* (supplement) email.
+- Reminders: first after `SICK_NOTE_REMINDER_AFTER_DAYS`, then every `SICK_NOTE_REMINDER_INTERVAL_DAYS`, at most `SICK_NOTE_REMINDER_MAX` times; not for rejected or cancelled requests.
+- File contents are deleted `SICK_LEAVE_FILE_RETENTION_DAYS` after being emailed; the record (name, size, dates) stays.
+
+### Emails
+
+| Event | Recipients |
+| --- | --- |
+| New day off / sick leave, cancellation, sick note | The project's email recipients (**Projects → email recipients**, To/CC) |
+| New request to administration / accounting | The department's responsible people (**Departmental points of contact**) |
+
+> **An email is sent only if the project (or department) has at least one "To" recipient.** With only CC recipients, or none, no email goes out — and no error is shown.
+
+All emails are in Polish, with an HTML version and a plain-text fallback.
+
+### Broadcasts
+
+- **Audience:** all active users, or selected users.
+- **One-off:** sent once at **Scheduled at** — the field must be filled in.
+- **Recurring:** daily, weekly (weekday) or monthly (day of month) at the send time. A monthly broadcast on the 31st goes out on the last day of shorter months.
+- The scheduler checks every 5 minutes, so a broadcast may arrive up to 5 minutes after its time. Each recurring broadcast is sent at most once per day, week or month.
+- **Send selected broadcasts now** in the list sends immediately. After each send the list shows the time and how many messages were delivered or failed. Telegram rate limits (429) are respected automatically.
 
 ## Architecture
 
-```
-┌─────────────┐      ┌──────────────┐      ┌──────────────┐
-│  Telegram   │◄────►│bot (aiogram) │      │web (gunicorn)│
-│  API        │      │long polling  │      │Django Admin +│
-└─────────────┘      └──────┬───────┘      │/requests/... │
-                            │              └──────┬───────┘
-                            │   Django ORM (sync_to_async)  
-                            ▼                     ▼
-                      ┌─────────────────────────────────────┐
-                      │           PostgreSQL (db)           │
-                      └─────────────────────────────────────┘
-                             ▲                     ▲
-                             │ .delay()            │ reads schedule
-                      ┌──────┴───────┐      ┌──────┴───────┐
-                      │celery worker │◄────►│ celery-beat  │
-                      │email + push  │      │(scheduler,   │
-                      │broadcasts    │      │ every 5 min) │
-                      └──────┬───────┘      └──────────────┘
-                             │
-                      ┌──────┴───────┐
-                      │Redis (broker)│
-                      └──────────────┘
-```
-
-Services in `docker-compose.yml`: `db`, `redis`, `migrate` (one-shot, applies migrations that are already generated and committed to the repository, before the rest start), `web`, `bot`, `celery`, `celery-beat`. Startup order is controlled via `depends_on: condition: service_healthy / service_completed_successfully`.
-
-## Project Structure
-
-```
-.github/workflows/
-  ci.yml                     GitHub Actions: Django checks + Docker image build
-config/                      Django settings (+ CELERY_BEAT_SCHEDULE, SITE_BASE_URL), celery.py, urls.py, wsgi.py
-users/
-  models.py                  Custom User model (AbstractUser + telegram_id, language)
-  forms.py                   Custom Django Admin user-creation form
-                              (no username field, password optional)
-  admin.py                   UserAdmin
-core/
-  models.py                  Region, Project, ProjectDateLimit, ProjectEmailRecipient,
-                              AbsenceRequest, Broadcast, ServiceRequest,
-                              DepartmentResponsiblePerson
-  admin.py                   Django Admin for all project entities
-  admin_widgets.py           Custom Textarea widget with an emoji picker
-  views.py                   Public view for deciding requests (from email, token-protected)
-  tasks.py                   Celery tasks: absence-request email notifications (HTML, Polish),
-                              broadcast sending, email/push for administration/accounting requests
-  static/core/admin/         CSS/JS for the Django Admin emoji picker (no external dependencies)
-  templates/core/
-    emails/                  HTML email templates
-    service_request_decision.html   Decision confirmation page (opened from the email)
-bot/
-  loader.py                  Bot and Dispatcher instances (aiogram)
-  states.py                  FSM states for submitting requests (including free-text ones)
-  locales.py                 Translation dictionary + t() function
-  filters.py                 Custom aiogram filter TextIs
-  utils.py                   All Django ORM access from the bot (sync_to_async wrappers)
-  keyboards/
-    menus.py                 Reply/inline keyboards for the main menu, type/region/project selection
-    calendar.py              Interactive localized date-selection calendar
-    inline.py                 Coordinator decision, panel, and access-denied keyboards
-  handlers/
-    start.py                 /start, language selection, Telegram-ID access check
-    request_flow.py          Submitting a request (type → region → project → dates → confirmation)
-    service_request_flow.py  Submitting a request to administration/accounting (free text)
-    cabinet.py                Worker's cabinet (my requests — both kinds, coordinator contacts)
-    coordinator.py           Coordinator panel, request decisions
-  management/commands/
-    runbot.py                 Django management command: starts aiogram polling
+```mermaid
+flowchart LR
+    subgraph Telegram
+        U[Worker / Coordinator]
+    end
+    subgraph Railway
+        WEB["web<br/>Django + Mini App + Admin"]
+        BOT["bot<br/>aiogram polling"]
+        WRK["worker<br/>Celery"]
+        BEAT["celerybeat<br/>scheduler"]
+        BAK["Postgres Backup<br/>cron"]
+        PG[(PostgreSQL)]
+        RD[(Redis)]
+    end
+    U -- Mini App --> WEB
+    U <-- chat --> BOT
+    WEB --> PG
+    BOT --> PG
+    WEB -- tasks --> RD
+    BEAT -- schedule --> RD
+    RD --> WRK
+    WRK --> PG
+    WRK -- push --> U
+    PG --> BAK
+    subgraph External["External services"]
+        RESEND[Resend]
+        SENTRY[Sentry]
+        R2[(Cloudflare R2)]
+    end
+    WRK -- email --> RESEND
+    BAK -- nightly dump --> R2
+    WEB & BOT & WRK -. errors .-> SENTRY
 ```
 
-## Features
+All application services are built from **one Docker image** and differ only in the start command (`entrypoint.sh`):
 
-**Core (per the spec):**
-- Multilingual — Ukrainian, Polish, English, Russian
-- Submitting a request: type (day off / L4) → region → project → interactive calendar
-- Past dates cannot be selected
-- Confirmation card before submitting
-- Push notification to the coordinator with inline "Approve/Reject" buttons directly in the message
-- Coordinator panel: request history for their projects with filters (All/New/Processed)
-- Rejection is forcibly disabled for L4
-- Push notification to the worker about the decision
-- Asynchronous email notifications via Celery to the To/CC recipients configured in Django Admin
+| Service | Start command | Role |
+| --- | --- | --- |
+| `web` | `./entrypoint.sh web` | Runs migrations, serves Django Admin, the JSON API (`/api/`), the Mini App (`/app/`) and email decision links |
+| `bot` | `./entrypoint.sh bot` | Telegram bot (long polling); sets the menu button that opens the Mini App |
+| `worker` | `./entrypoint.sh celery` | Background jobs: emails, push notifications, broadcasts |
+| `celerybeat` | `./entrypoint.sh celery-beat` | Scheduler — **exactly one instance** |
 
-**Added beyond the base spec:**
-- **Telegram-ID-only access** — no in-bot registration or login at all; an administrator adds each user through Django Admin, entering just their Telegram ID (first/last name are required; email/phone/password are not)
-- **Flexible access revocation via `is_active`** — access can be disabled with a single click without deleting the user or losing their request history
-- **"Get my Telegram ID" button** on access denial — instantly produces a ready-to-forward text template for the coordinator
-- **Monthly day-off limit per project** — total days off a worker can take per project within a calendar month, not just per single request
-- **Worker limit per date** — how many people can be off at the same time on a given day, configured per project
-- **Per-date limit override** (`ProjectDateLimit`) — e.g., Aug 5 → 2 people, Aug 6 → 5 people, falling back to the project's general limit
-- **Requests to administration and accounting** — separate request types (free text, no dates/project) where the "Approve/Reject" decision is made **directly in the email**, not in the bot
-- **Broadcast messages to workers** via Django Admin — one-time (a specific date/time) or recurring (daily/weekly/monthly, e.g. "the 1st of every month"), with audience targeting and a built-in emoji picker
-- **Polish HTML email** with a colored status badge instead of plain text
-- **Automatic Django Admin logout** after 10 minutes of inactivity
-- **WhiteNoise** for serving admin static files without a separate nginx
-- **Health checks + a one-shot migrate service** in Docker Compose, eliminating the startup race condition
-- **GitHub Actions CI** — automated checks on every push/PR
+> `./entrypoint.sh celery-all` runs worker and scheduler in one process to save resources. Use it **instead of** separate `worker` + `celerybeat`, never alongside them — two schedulers send every broadcast and reminder twice.
 
-## Quick Start (Docker)
+### Scheduled jobs
+
+| Job | When | What it does |
+| --- | --- | --- |
+| `check_and_send_due_broadcasts` | every 5 min | Sends broadcasts whose time has come |
+| `remind_missing_sick_notes` | daily 10:00 | Reminds workers to attach a missing sick note |
+| `purge_old_sick_leave_files` | daily 03:30 | Deletes sick-note file contents emailed more than N days ago (the record stays) |
+
+Times are `Europe/Warsaw`.
+
+## Tech stack
+
+| Layer | Technology |
+| --- | --- |
+| Backend | Python 3.12, Django 5.0, Gunicorn, WhiteNoise |
+| Bot | aiogram 3 |
+| Background jobs | Celery 5 + Redis |
+| Database | PostgreSQL 16 |
+| Mini App | React 18 + Vite 5, Telegram WebApp SDK |
+| Email | [Resend](https://resend.com) via `django-anymail` |
+| Error monitoring | [Sentry](https://sentry.io) |
+| Hosting | [Railway](https://railway.com), domain on Cloudflare |
+| Backups | Railway *Postgres Backup* template → Cloudflare R2 |
+| Excel | openpyxl |
+
+### Project layout
+
+```text
+api/            JSON API for the Mini App, Telegram initData auth, Celery tasks for notifications
+bot/            aiogram bot: handlers, keyboards, translations (bot/locales.py)
+config/         Django settings, URLs, Celery app
+core/           Models, admin, email templates, limit logic (services.py),
+                file checks (sick_leave_files.py), Excel report (stats_export.py)
+users/          Custom User model, admin, CSV import (csv_import.py)
+webapp/         React Mini App (src/screens, src/components, src/i18n.js)
+entrypoint.sh   Start modes for every service
+```
+
+## Getting started
+
+### Prerequisites
+
+- Docker and Docker Compose
+- Node.js 20 (only to build the Mini App locally)
+- A Telegram bot token from [@BotFather](https://t.me/BotFather)
+
+### Run locally
 
 ```bash
-cp .env.example .env
-# fill in BOT_TOKEN, POSTGRES_*, EMAIL_*, SITE_BASE_URL (see "Environment Variables" below)
+git clone https://github.com/Brebston/apolo_freedays.git
+cd apolo_freedays
+cp .env.example .env                   # fill in the values — see Configuration
 
+cd webapp && npm install && npm run build && cd ..
 docker compose up --build
 docker compose exec web python manage.py createsuperuser
 ```
 
-Django Admin: http://localhost:8000/admin/
-Bot: message it `/start` on Telegram — until your Telegram ID is added in Django Admin, the bot will show an access-denied message.
+- Admin: <http://localhost:8000/admin/>
+- Health check: <http://localhost:8000/healthz>
 
-Startup order is fully automatic: `db`/`redis` become healthy, `migrate` applies the already-committed migrations, then `web`/`bot`/`celery`/`celery-beat` start.
+The Compose volume `.:/app` hides the Mini App built inside the image, which is why it is built on the host once. Repeat `npm run build` after changing the frontend.
 
-## Local Setup (without Docker)
+Compose starts `db` and `redis`, waits for their health checks, runs the one-off `migrate` service, and only then starts `web`, `bot`, `celery` and `celery-beat`.
 
-Requires: Python 3.12, PostgreSQL, Redis.
+### Run without Docker
+
+Requires Python 3.12, PostgreSQL and Redis running locally.
 
 ```bash
 python3.12 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env   # POSTGRES_HOST=localhost, REDIS_URL=redis://localhost:6379/0
-
+cp .env.example .env              # POSTGRES_HOST=localhost, REDIS_URL=redis://localhost:6379/0
 python manage.py migrate
 python manage.py createsuperuser
 
-# four separate terminals:
+# four terminals:
 python manage.py runserver
 python manage.py runbot
 celery -A config worker -l info
 celery -A config beat -l info
 ```
 
-## Environment Variables
+### Develop the Mini App in a browser
 
-| Variable | Purpose |
-|---|---|
-| `DJANGO_SECRET_KEY` | Django secret key (unique in production) |
-| `DJANGO_DEBUG` | `1` for development, `0` for production |
-| `DJANGO_ALLOWED_HOSTS` | Comma-separated allowed hosts |
-| `POSTGRES_DB/USER/PASSWORD/HOST/PORT` | PostgreSQL connection (`HOST=db` in Docker) |
-| `REDIS_URL` | Celery and Celery Beat broker/backend |
-| `BOT_TOKEN` | Token from [@BotFather](https://t.me/BotFather) |
-| `EMAIL_HOST/PORT/HOST_USER/HOST_PASSWORD/USE_TLS` | SMTP (for Gmail — an App Password is required, not the regular account password) |
-| `DEFAULT_FROM_EMAIL` | Sender address |
-| `SITE_BASE_URL` | Public site address (e.g. `https://bot.yourdomain.com`) — used to build the "Approve/Reject" buttons in administration/accounting request emails |
+Telegram only opens Mini Apps over HTTPS, so for local work the app can run in an ordinary browser. Set `DJANGO_DEBUG=1` and `WEBAPP_DEV_TELEGRAM_ID=<your Telegram ID>` in `.env`, then:
 
-## Django Admin — Entities
+```bash
+python manage.py runserver        # terminal 1
+cd webapp && npm run dev          # terminal 2 → http://localhost:5173
+```
 
-| Model | Purpose |
-|---|---|
-| **Users** | First/last name (Latin letters), **Telegram ID** (the key field — without it the bot stays inaccessible), `is_active` = bot access, `is_staff` = coordinator. Email, phone, and password are optional (password is only needed for coordinators who log into Django Admin itself) |
-| **Regions** | Region directory (Warsaw, Gdańsk, etc.) |
-| **Projects** | Name, region, `dayoff_limit` (monthly day limit), `max_workers_per_day` (limit per date, empty = unlimited), `coordinators` (M2M), inline lists of email recipients and per-date limit overrides |
-| **ProjectDateLimit** | Worker-limit override for a specific date of a specific project |
-| **ProjectEmailRecipient** | Project's email recipients with a To/CC type |
-| **AbsenceRequest** | Log of all day-off/L4 requests, filterable by status/type/project/date |
-| **ServiceRequest** | Requests to administration/accounting: text, status, unique `decision_token` for the email-based decision |
-| **DepartmentResponsiblePerson** | Who receives the email for a given department's requests (Administration/Accounting) — picks a `User` profile, not a raw address |
-| **Broadcast** (Newsletters) | Telegram broadcast messages to workers: text (with an emoji picker), audience, schedule (one-time/recurring), stats from the last send |
+Vite proxies `/api` to Django. The ID bypass only works with `DEBUG=1`.
 
-## Custom Function Reference
+## Configuration
 
-### `bot/utils.py` — all Django ORM access from the bot
+All settings come from environment variables. `.env.example` lists them.
 
-| Function | Description |
-|---|---|
-| `get_user_by_telegram_id(telegram_id)` | A "raw" lookup by Telegram ID (regardless of `is_active`) — used where the handler itself needs to branch on missing access (e.g. `/start`) |
-| `get_active_user_by_telegram_id(telegram_id)` | Same, but only returns the user if `is_active=True` — used in every handler that grants access to actual bot functionality (submitting requests, the cabinet, the coordinator panel) |
-| `set_user_language(telegram_id, language)` | Changes the user's interface language |
-| `get_regions()` | List of all regions |
-| `get_projects_by_region(region_id)` | Projects for a specific region |
-| `get_project(project_id)` | A project with its region preloaded |
-| `get_project_coordinators(project_id)` | Coordinators (`is_staff=True`, with a linked `telegram_id`) of a specific project |
-| `get_coordinators_by_region(region_id)` | All coordinators of projects in a region (for the "Contacts" section) |
-| `get_coordinator_project_ids(user_id)` | IDs of projects a coordinator is assigned to |
-| `create_absence_request(user_id, project_id, request_type, dates)` | Creates an `AbsenceRequest`, storing the full list of dates in the `dates` field (not just start/end) |
-| `create_service_request(user_id, request_type, text)` | Creates a `ServiceRequest` (administration/accounting request) |
-| `get_used_dayoff_days_in_month(user_id, project_id, year, month, exclude_request_id=None)` | How many days off the worker has already used for the project in a calendar month (across all requests, excluding rejected ones) — the basis of the **monthly limit** |
-| `get_workers_count_on_date(project_id, iso_date)` | How many UNIQUE project workers already have a day off on a specific date — the basis of the **per-date limit** |
-| `get_date_capacity_limit(project_id, iso_date)` | Returns the overridden limit from `ProjectDateLimit` for the date, or `None` if no override exists (in which case the project's general limit applies) |
-| `get_request(request_id)` | An `AbsenceRequest` with user/project/region preloaded |
-| `decide_request(request_id, status, decided_by_id)` | Atomically changes an `AbsenceRequest`'s status (only if it's still `pending`), returns `(request, changed: bool)` |
-| `get_my_requests(user_id)` | The worker's last 20 `AbsenceRequest`s only (superseded by `get_my_all_requests`) |
-| `get_my_all_requests(user_id, limit=20)` | Merges `AbsenceRequest` and `ServiceRequest` into one list sorted by creation date; each object gets a `.kind` attribute (`"absence"`/`"service"`) for correct rendering |
-| `get_project_requests(project_ids, status_filter)` | Requests for a coordinator's projects with an "All/New/Processed" filter |
-| `save_notification_message_id(request_id, coordinator_telegram_id, message_id)` | Stores the sent push notification's message ID (for potential later editing) |
+### Required
 
-### `users/forms.py`
+| Variable | Description |
+| --- | --- |
+| `DJANGO_SECRET_KEY` | Long random string. Generate: `python -c "import secrets; print(secrets.token_urlsafe(50))"` |
+| `DJANGO_ALLOWED_HOSTS` | Comma-separated hosts, e.g. `apolo.blacky.click,.up.railway.app` |
+| `CSRF_TRUSTED_ORIGINS` | Full origins, e.g. `https://apolo.blacky.click` |
+| `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_HOST`, `POSTGRES_PORT` | Database connection |
+| `REDIS_URL` | Celery broker, e.g. `redis://redis:6379/0` |
+| `BOT_TOKEN` | Telegram bot token. Also used to verify the Mini App signature, so it must be identical on every service |
+| `RESEND_API_KEY` | Resend API key for all outgoing email |
+| `DEFAULT_FROM_EMAIL` | Sender, e.g. `Apolo <notifications@apolo.blacky.click>`. The domain must be verified in Resend |
+| `SITE_BASE_URL` | Public URL used in email links, e.g. `https://apolo.blacky.click` |
+| `WEBAPP_URL` | Mini App URL for the bot's menu button, e.g. `https://apolo.blacky.click/app/` |
 
-| Object | Description |
-|---|---|
-| `UserCreationForm` | Custom Django Admin user-creation form. The `username` field is removed from the form (auto-generated in `User.save()`); the password is fully optional — if left blank, `set_unusable_password()` is called (blocks Django Admin login, has no effect on bot access) |
+### Optional
 
-### `core/admin_widgets.py`
+| Variable | Default | Description |
+| --- | --- | --- |
+| `DJANGO_DEBUG` | `0` | `1` only for local development |
+| `SENTRY_DSN` | — | Enables error monitoring. Without it Sentry stays off |
+| `SENTRY_ENVIRONMENT` | `production` | Environment name shown in Sentry |
+| `SICK_NOTE_REMINDER_AFTER_DAYS` | `2` | First reminder this many days after an L4 without a document |
+| `SICK_NOTE_REMINDER_INTERVAL_DAYS` | `2` | Days between reminders |
+| `SICK_NOTE_REMINDER_MAX` | `3` | Maximum reminders per request |
+| `SICK_LEAVE_FILE_RETENTION_DAYS` | `90` | How long sick-note files are kept after being emailed |
+| `WEBAPP_DEV_TELEGRAM_ID` | — | Local browser development only (with `DJANGO_DEBUG=1`) |
 
-| Object | Description |
-|---|---|
-| `EmojiTextarea` | A custom `forms.Textarea` with a clickable emoji panel above the field (in Django Admin). Wires up CSS/JS via `Media`, with no external libraries — the files live at `core/static/core/admin/emoji_picker.{css,js}`. Clicking an emoji inserts it at the current cursor position |
+`RAILWAY_SERVICE_NAME` is set by Railway automatically and tags Sentry events with `web`, `bot`, `worker` or `celerybeat`.
 
-### `core/views.py`
+## Deployment
 
-| Function | Description |
-|---|---|
-| `decide_service_request(request, token, action)` | Public (no login) view for the "Approve"/"Reject" email buttons. `GET` shows a confirmation page, `POST` actually changes the status — so email scanners/link-prefetching mail clients don't accidentally trigger a decision. Idempotent: a repeat click after a decision shows "already processed" |
+Production runs on Railway at `apolo.blacky.click`.
 
-### `bot/locales.py`
+### 1. Railway services
 
-| Object | Description |
-|---|---|
-| `TEXTS` | Dictionary `{key: {uk, pl, en, ru}}` with all interface text |
-| `t(key, lang, **kwargs)` | Returns the localized text; substitutes `{placeholders}`; falls back to Ukrainian if the language is missing |
+1. **New Project → Deploy from GitHub repo**, then add **PostgreSQL** and **Redis**.
+2. Create `web`, `bot`, `worker` and `celerybeat` from the same repository, each with its start command from the [table above](#architecture). Only `web` gets a public domain.
+3. Give every service the same variables (**Variables → Raw Editor**). Database and Redis values reference Railway's own services:
 
-### `bot/filters.py`
+   ```env
+   POSTGRES_DB=${{Postgres.PGDATABASE}}
+   POSTGRES_USER=${{Postgres.PGUSER}}
+   POSTGRES_PASSWORD=${{Postgres.PGPASSWORD}}
+   POSTGRES_HOST=${{Postgres.PGHOST}}
+   POSTGRES_PORT=${{Postgres.PGPORT}}
+   REDIS_URL=${{Redis.REDIS_URL}}
+   ```
 
-| Class | Description |
-|---|---|
-| `TextIs(key)` | Custom `aiogram.filters.BaseFilter` — compares the incoming message text with the localized button label for the current user's language (looked up from the DB by `telegram_id`) |
+4. Keep `celerybeat` at **one replica**.
 
-### `bot/keyboards/calendar.py`
+Every push to `main` redeploys all services. `web` applies migrations on start.
 
-| Function | Description |
-|---|---|
-| `build_calendar(year, month, selected, lang="uk")` | Generates the inline calendar: localized month name and weekday labels (uk/pl/en/ru), unclickable past dates, multi-select with a ✅ mark, month navigation, a "Selected: N" counter |
+### 2. Domain (Cloudflare)
 
-### `bot/keyboards/menus.py` / `bot/keyboards/inline.py`
+1. Railway: `web` → **Settings → Networking → Custom Domain** → `apolo.blacky.click`. Copy the CNAME target.
+2. Cloudflare DNS: add `CNAME apolo → <target>` with **Proxy status: DNS only** (grey cloud). Railway already sits behind Cloudflare; the orange proxy causes error 1000.
+3. Wait for the green check in Railway — the certificate is issued automatically.
 
-| Function | Description |
-|---|---|
-| `language_keyboard()` | Language selection (4 buttons) — the first step on every `/start` |
-| `main_menu_keyboard(lang, is_staff)` | Main reply menu; "Coordinator panel" button only shown if `is_staff=True` |
-| `no_access_reply_keyboard(lang)` | A reduced reply menu for users without access — only the "🌐 Language" button |
-| `request_type_keyboard(lang)` | "Day off" / "Sick leave (L4)" / "Request to administration" / "Request to accounting" / "Cancel" |
-| `regions_keyboard(regions)` / `projects_keyboard(projects)` | Dynamic lists sourced from the DB |
-| `confirm_keyboard(lang)` | "Confirm" / "Cancel" — shared across all request types |
-| `decision_keyboard(request_id, lang, can_reject=True)` | Coordinator decision buttons (day-off/L4 only); the "Reject" button is omitted if `can_reject=False` (L4) |
-| `coordinator_panel_keyboard(lang)` | "All/New/Processed" filters |
-| `requests_list_keyboard(requests)` | Request list for the coordinator panel |
-| `no_access_keyboard(lang)` | An inline "🆔 Get my Telegram ID" button shown on access denial |
+### 3. Telegram
 
-### `core/tasks.py`
+In [@BotFather](https://t.me/BotFather): `/mybots` → your bot → **Bot Settings → Configure Mini App** → `https://apolo.blacky.click/app/`. The bot also sets its menu button on every start.
 
-| Object | Description |
-|---|---|
-| `send_absence_request_email(self, request_id)` | Celery task (bind=True, up to 3 retries): renders the HTML template in Polish, builds a plain-text fallback, sends to all of the project's To/CC recipients |
-| `_STATUS_LABELS_PL`, `_TYPE_LABELS_PL` | Status/type → Polish label + badge color maps (independent of the DB's stored language — the email is always in Polish) |
-| `send_service_request_email(self, service_request_id)` | Celery task: sends the administration/accounting request email with clickable "Approve"/"Reject" buttons linking to `decide_service_request` with a unique token |
-| `notify_service_request_decision(self, service_request_id)` | Celery task: sends the worker a Telegram push notification after a decision made via email |
-| `send_broadcast_message(self, broadcast_id)` | Celery task (bind=True, up to 3 retries): sends one broadcast to all its recipients via the Telegram Bot API (direct HTTP calls, with 429 rate-limit handling), updates stats (`last_sent_at`, `last_sent_count`, `last_failed_count`) |
-| `check_and_send_due_broadcasts()` | Periodic Celery Beat task (every 5 min): checks all active broadcasts and queues the ones whose scheduled/recurring time has arrived |
+### 4. Email (Resend)
 
-### `core/models.py`
+1. Resend → **Domains → Add domain** — the domain used in `DEFAULT_FROM_EMAIL`.
+2. Add the DNS records Resend shows (SPF, DKIM) in Cloudflare DNS and wait for **Verified**.
+3. Resend → **API Keys** → create a key → set `RESEND_API_KEY` on `web` and `worker`.
 
-| Method/Object | Description |
-|---|---|
-| `latin_name_validator` | A `RegexValidator` allowing only `[A-Za-z\-]` for first/last names |
-| `AbsenceRequest.can_be_rejected()` | `True` only for the "Day off" type; always `False` for L4 |
-| `Project.dayoff_limit` | Monthly day-off limit (not a per-request limit) |
-| `Project.max_workers_per_day` | `null=True` → unlimited; otherwise the general concurrent-absence limit per date |
-| `AbsenceRequest.dates` | A `JSONField` holding the full list of selected ISO dates — needed for accurate monthly-limit counting with non-contiguous date selections |
-| `RecurrenceType`, `BroadcastAudience` | `TextChoices` for the broadcast's recurrence type (none/daily/weekly/monthly) and audience (all active/specific users) |
-| `Broadcast.get_recipients()` | Returns the recipient queryset for a broadcast based on `audience` |
-| `Broadcast.is_due(now)` | Determines whether a broadcast should fire now, with protection against double-sending within the same period (`_same_period`) |
-| `RequestDepartment` | `TextChoices` — Administration / Accounting |
-| `generate_decision_token()` | Generates a cryptographically random token (`secrets.token_urlsafe(32)`) for `ServiceRequest.decision_token` — an unguessable decision link for the email |
-| `ServiceRequest` | Administration/accounting request: free text, status, `decision_token`, no project/date attached |
-| `DepartmentResponsiblePerson` | Who (a `User` profile) receives the email for a given department, with a To/CC type |
+### 5. Error monitoring (Sentry)
 
-### `users/models.py`
+1. Create a **Django** project in Sentry and copy its DSN. Pick the EU region if possible.
+2. Set `SENTRY_DSN` on `web`, `bot`, `worker` and `celerybeat`.
+3. Do **not** paste Sentry's sample `sentry_sdk.init(...)` into `settings.py` — initialisation already exists, and the sample enables `send_default_pii=True`, which this project deliberately disables.
 
-| Method | Description |
-|---|---|
-| `User.save()` | If `username` is empty, generates one automatically: email → `tg{telegram_id}` → a random string (in that priority order) |
+A new Sentry organisation starts on a 14-day Business trial and then moves to the free Developer plan automatically; no payment is needed.
 
-## Bot Business Logic (Flow)
+### 6. Backups (Cloudflare R2)
 
-1. **`/start`** (and the "🌐 Language" button) → **always** shows language selection first, regardless of whether the user already has access
-2. **Access check** immediately after the language is chosen: a lookup by `telegram_id`
-   - **Found + `is_active=True`** → the language is saved to the DB, the main menu is shown
-   - **Not found OR `is_active=False`** → an "access denied" message with an inline "🆔 Get my Telegram ID" button, and the reply menu is reduced to just the "🌐 Language" button
-3. **"Get my Telegram ID"** → the bot sends a ready-to-forward text template containing the user's ID — just forward it to the coordinator
-4. **Granting access**: an administrator/coordinator goes to **Django Admin → Users → Add user**, enters the Telegram ID (and first/last name) — that's enough, everything else is optional
-5. **Submitting a request**: type (day off / L4 / to administration / to accounting)
-   - Day off/L4 → region → project → calendar → confirmation card → email + push to all of the project's coordinators with inline decision buttons
-   - To administration/accounting → free text → confirmation card → email to the department's responsible person with decision buttons right in the email
-6. **Coordinator decision** (day-off/L4): works identically whether triggered from the push notification or the coordinator panel; for L4 the "Reject" button is missing at the keyboard level and additionally blocked at the handler level
-7. **Deciding an administration/accounting request**: made by clicking a button in the email → confirmation page → push notification to the worker with the status
+Built-in Railway backups may be unavailable on the Hobby plan and can only be restored inside the same project, so a nightly copy is kept **outside Railway**.
 
-## Bot Access Control
+1. **Cloudflare R2:** create a **private** bucket `apolo-backups` (EU jurisdiction). Add a lifecycle rule: delete objects after **30 days**. Create an R2 API token with **Object Read & Write** on this bucket only.
+2. **Railway:** **+ Create → Template → Postgres Backup** (by Railway Templates). Set:
 
-There's no registration or login in the bot — access is fully controlled by an administrator:
+   ```env
+   BACKUP_DATABASE_URL=${{Postgres.DATABASE_URL}}
+   AWS_ACCESS_KEY_ID=<R2 access key id>
+   AWS_SECRET_ACCESS_KEY=<R2 secret access key>
+   AWS_S3_BUCKET=apolo-backups
+   AWS_S3_REGION=auto
+   AWS_S3_ENDPOINT=<R2 S3 endpoint>
+   SINGLE_SHOT_MODE=true
+   ```
 
-1. A new worker messages the bot `/start`, picks a language, and receives an access-denied message with a button to get their Telegram ID
-2. They forward that message to a coordinator/admin
-3. The admin goes to Django Admin → Users → Add user, enters the Telegram ID, first name, and last name (email/phone/password can be left blank)
-4. The worker sends `/start` again — they now see the main menu
+3. Keep the **Daily** cron schedule. With `SINGLE_SHOT_MODE` the service runs for a few seconds per night and exits. Delete the Railway **Bucket** that the template creates — backups go to R2.
 
-**Revoking access** without deleting the user or losing their request history — just uncheck `is_active` in Django Admin. This is checked in every key bot handler via `get_active_user_by_telegram_id()`, not only on `/start`.
+Deploying the template runs the first backup immediately; check that a file appears in the bucket.
 
-## Day-Off Limits
+## Django Admin
 
-Priority order when selecting a date in the calendar (day-off type only):
+The admin interface is in English; its language is set separately from the bot by `LANGUAGE_CODE` in `config/settings.py`.
 
-1. **Monthly limit** (`Project.dayoff_limit`) — the sum of already-used days plus the days selected in the current session, within the same calendar month, cannot exceed the limit
-2. **Per-date limit** — first checks `ProjectDateLimit` (an override for that specific date); if no entry exists, the general `Project.max_workers_per_day` applies; if that's also empty, there's no limit
+| Section | What it holds |
+| --- | --- |
+| **Users** | Workers and coordinators. **Active** = access to the bot; **Staff** = coordinator (and Django Admin login). Import from CSV here |
+| **Regions** | Regions used to group projects (Łódź, Warszawa, …) |
+| **Projects** | Name, region, monthly day-off limit, people per day (empty = no limit), coordinators, and — inline — **email recipients** (To/CC) and date-specific limits |
+| **Staffing limits for specific dates** | People-per-day overrides for a single date of a project |
+| **Reporting** | All day-off and sick-leave requests, with filters; attached sick notes on each request; **📊 Statistics (Excel)** |
+| **Reporting to Administration/Accounting** | Requests to administration and accounting with their status |
+| **Departmental points of contact** | Who receives administration or accounting requests, To/CC — a user profile, not a free-typed address |
+| **Newsletters** | Broadcasts to workers |
 
-## Service Requests (Administration / Accounting)
+**Users:**
 
-A third and fourth request type inside "➕ Submit a request" — ordering documents from administration (e.g. insurance certificate, załącznik) and questions to accounting (salary, discrepancies). Unlike day-off/L4, there's no project/date selection — just free text.
+- First and last name use **Latin letters and hyphens only** — no spaces, digits or diacritics.
+- Only the Telegram ID and name are needed for bot access; email, phone and password are optional.
+- A password is needed only for people who log in to Django Admin. Without one, the account cannot log in to the admin but the bot works normally.
 
-**Flow:**
-1. The worker picks "📄 Request to administration" or "💰 Request to accounting" on the same type-selection screen
-2. The bot asks for a free-text description → a confirmation card → a `ServiceRequest` is created
-3. An email goes to the department's responsible person (`DepartmentResponsiblePerson`, configured in Django Admin — a real `User` profile is picked, not a raw address, so the email is always current)
-4. **The decision is made directly in the email** — two clickable buttons ("✅ Zaakceptuj" / "❌ Odrzuć") link to a public, token-protected Django view
-5. Clicking opens a confirmation page (`GET`) — the actual status change only happens on the follow-up `POST`, protecting against email-client link prefetching (e.g. Outlook Safe Links) accidentally triggering a decision
-6. Once confirmed, the worker instantly gets a Telegram push notification with the status, and the record updates in "📋 My requests" (in the same list as day-off/L4 requests)
+### Everyday tasks
 
-**Decision-link security:** each `ServiceRequest` gets a random 32-byte token (`secrets.token_urlsafe(32)`) as its `decision_token` — unguessable, and the view checks the status is still `pending` before accepting a decision (idempotent, can't be processed twice).
+| Task | Where |
+| --- | --- |
+| Give a worker access | Admin → Users → **Add**, or **⬆ Import from CSV** |
+| Revoke access, keep history | Uncheck **Active** on the user |
+| Make someone a coordinator | Check **Staff** and add them to the project's coordinators |
+| Set limits | Admin → Projects (monthly limit, people per day) and Staffing limits for specific dates |
+| Who receives admin/accounting requests | Admin → Departmental points of contact |
+| Statistics | Admin → Reporting → **📊 Statistics (Excel)** |
+| Send a message to workers | Admin → Newsletters |
 
-## Broadcast Messages
+CSV import columns: `first_name`, `last_name`, `phone`, `telegram_id` (a template is downloadable on the import page). Names must use Latin letters.
 
-Django Admin → **Newsletters** (the `Broadcast` model) lets you send arbitrary Telegram messages to every worker subscribed to the bot, with no coding required.
+## Operations
 
-**Recipients (`audience`):**
-- "All active users" — everyone with bot access (`is_active=True` and a `telegram_id`)
-- "Specific users" — a manually picked subset via a multi-select widget
+### Restore drill (monthly)
 
-**Schedule:**
-- **One-time** — `Recurrence = None`, an exact date/time in `scheduled_at`
-- **Recurring** — `Daily` / `Weekly` (+ weekday) / `Monthly` (+ day of month; automatically clamped to the last day for short months — the 31st in February fires on the 28th/29th)
-- Schedule checking is done by `celery-beat` every 5 minutes (`check_and_send_due_broadcasts`); actual sending is done by `celery` (`send_broadcast_message`), one HTTP call to the Telegram Bot API per recipient (with `429 Too Many Requests` handling)
-- Protection against double-sending within the same period (day/week/month) via the `last_sent_at` field
-- The admin action **"Send selected broadcasts now"** in the list view triggers an immediate send, bypassing the schedule
+A backup you have never restored is only a hope. Once a month, download the latest dump from R2 and restore it into a throwaway database:
 
-**Emoji picker:** a clickable emoji panel above the text field (a custom `Textarea` widget, plain JS, no external dependencies), inserting the chosen emoji at the cursor position.
+```bash
+docker run -d --name restore-test -e POSTGRES_PASSWORD=test postgres:16
+docker exec -i restore-test psql -U postgres < backup.sql      # after unpacking the archive
+docker exec restore-test psql -U postgres -c "SELECT count(*) FROM core_absencerequest;"
+docker rm -f restore-test
+```
 
-**Stats:** after each send, `Last sent`, `Sent successfully`, and `Failed` show the results.
+If the dump starts with `PGDMP`, use `pg_restore -U postgres -d postgres` instead of `psql`.
 
-## Absence-Request Email Notifications
+### Storage
 
-Template: `core/templates/core/emails/new_absence_request.html` — an HTML table layout with inline styles (for email client compatibility), a colored status badge (yellow/green/red), always in Polish regardless of the language stored in the DB. A similar template for administration/accounting requests — `new_service_request.html` — includes the clickable decision buttons. `EmailMultiAlternatives.attach_alternative(html_body, "text/html")` — every email has both an HTML version and a plain-text fallback.
+Sick notes are stored in PostgreSQL rather than on disk, because each Railway service has its own ephemeral disk. Photos are compressed on the device first, so about ten sick notes a month add roughly 15 MB. File contents are purged automatically after `SICK_LEAVE_FILE_RETENTION_DAYS`; no manual cleanup is needed. After upgrading from the Railway Trial to Hobby, grow the Postgres volume with **Live Resize** — it does not grow automatically.
 
-## Database Migrations
+## Security and privacy
 
-**Migration files are committed to git** (`core/migrations/`, `users/migrations/`) — they're part of the codebase, not generated on every container start. The `migrate` service in `docker-compose.yml` only **applies** (`manage.py migrate`) already-existing migrations; it no longer generates them.
+The app processes personal and health data (sick notes), so privacy is built in:
 
-**Whenever you change a model** (`core/models.py`, `users/models.py`), locally run:
+- **Whitelist access.** Only users added by an administrator can use the bot and the app. The `Active` flag revokes access instantly.
+- **Signed requests.** Every API call carries Telegram's `initData`, verified with HMAC-SHA256 against `BOT_TOKEN` and rejected after 24 hours.
+- **Upload checks.** Files are validated by their content signature, not their extension. PDF and common image formats are accepted, including HEIC from iPhones; disguised executables are rejected. Size and count limits apply.
+- **Email decision links.** Each administration or accounting request gets a random 32-byte token. The link only shows a confirmation page, and the decision is applied on `POST`, so mail scanners cannot trigger it.
+- **Sentry** runs with `send_default_pii=False` and never receives request bodies.
+- **Data location.** R2 bucket and Sentry in EU regions; the R2 bucket is private.
+- **Admin sessions** expire after 10 minutes of inactivity.
+
+## Development
+
+### Migrations
+
+Migrations are committed to Git; containers only apply them. After changing a model:
 
 ```bash
 python manage.py makemigrations users core
-git add core/migrations/ users/migrations/
-git commit -m "..."
+git add core/migrations users/migrations
 ```
 
-If you forget, CI's `makemigrations --check --dry-run` step will fail the build — that's exactly what it's there to catch.
+CI fails if a model changes without a migration.
 
-## Continuous Integration (CI)
+> **New files are not picked up by `git commit -a` or `git add -u`.** Run `git status` and add untracked files explicitly — a missing new module is the most common cause of a red CI.
 
-`.github/workflows/ci.yml` runs on every push/PR to `main`/`develop`:
+### Continuous integration
 
-- **`django-checks`** (against real PostgreSQL 16 and Redis 7 service containers): `py_compile` on every `.py` file, `manage.py check`, `manage.py makemigrations users core --check --dry-run` (fails the build if a model changed without a matching migration being generated and committed), `manage.py migrate` against a clean test database, `collectstatic`
-- **`docker-build`**: builds the `Dockerfile`, validates `docker-compose.yml` via `docker compose config`
+GitHub Actions (`.github/workflows/ci.yml`) runs on every push and pull request to `main`:
 
-No secrets are needed for CI — every `.env` value in the workflow is fake/test data, no real tokens are used there.
+| Job | Checks |
+| --- | --- |
+| `django-checks` | Syntax, `manage.py check`, missing migrations, migrations against PostgreSQL 16 + Redis 7, `collectstatic` |
+| `docker-build` | Builds the image, validates `docker-compose.yml` |
+| `webapp-build` | Builds the Mini App |
 
-## Localization
+### Adding a language
 
-Supported bot interface languages: `uk`, `pl`, `en`, `ru`. To add a new language — add a key to every entry in the `TEXTS` dictionary (`bot/locales.py`), to `_WEEKDAYS`/`_MONTHS` (`bot/keyboards/calendar.py`), and to the language selection keyboard (`bot/keyboards/menus.py:language_keyboard()`).
+1. Mini App: add a dictionary to `webapp/src/i18n.js` (plus month and weekday names).
+2. Bot: add the key to every entry of `TEXTS` in `bot/locales.py` and to the calendar names in `bot/keyboards/calendar.py`.
+3. Add the language to `users.models.Language`, create a migration, and add it to the language picker.
 
-The language of **Django Admin itself** (buttons like "Save", "Home", etc.) is a separate `LANGUAGE_CODE` setting in `config/settings.py`, unrelated to the bot languages above.
-
-## Security
-
-- **Whitelist access by Telegram ID** — no self-service registration in the bot whatsoever; anyone not added by an admin sees nothing beyond language selection
-- `is_active` allows instantly revoking bot access without deleting the user (request history is preserved)
-- The Django Admin password is optional when creating a user; if left blank, the account gets an `unusable password` (blocks Django Admin login, has no effect on the bot)
-- Django Admin: automatic logout after 10 minutes of inactivity (`SESSION_COOKIE_AGE=600`, `SESSION_SAVE_EVERY_REQUEST=True`)
-- Full names accept Latin letters only — guards against special-character injection in reports/emails
-- SMTP via Gmail requires an App Password (2FA), not the regular account password
-- The public decision URL for administration/accounting requests is protected by an unguessable token (32 bytes), not a login; `GET` only shows a confirmation, the actual action only happens on `POST`
-
-## Development (Hot Reload)
-
-For local development with PyCharm, you can enable auto-restart on file save (without rebuilding the image) — `gunicorn --reload` for `web` and `watchmedo auto-restart` (the `watchdog` package) for `bot`/`celery`. **Development only** — remove these flags before a production release for the sake of stability under load.
+The Django Admin language is independent: `LANGUAGE_CODE` in `config/settings.py`.
 
 ## Troubleshooting
 
-| Symptom | Cause / Fix |
-|---|---|
-| `Connection refused` to `db` on startup | Postgres isn't ready yet — resolved via a healthcheck plus the `migrate` service in `docker-compose.yml` |
-| `Dependency on app with no migrations` | Migrations are missing from the repository — run `python manage.py makemigrations users core` and commit the result (see "Database Migrations") |
-| `AttributeError: module 'core.models' has no attribute '...'` in `makemigrations --check` | A migration file references a function/field that doesn't exist in the current `models.py` — usually means the model and its migration were committed out of sync. Delete the stale migration, regenerate it (`makemigrations`), and commit it together with the model |
-| Admin panel has no styling (CSS) | Gunicorn doesn't serve static files — resolved with WhiteNoise (`whitenoise.middleware.WhiteNoiseMiddleware`) |
-| `WORKER TIMEOUT` in gunicorn | A single sync worker with too short a timeout — fixed with `--workers 2 --timeout 60` |
-| A bot button just spins with no response | An unhandled exception in the handler — aiogram never calls `callback.answer()`; check `docker compose logs -f bot` at the moment of the click |
-| `SMTPAuthenticationError 535` (Gmail) | An App Password (2FA) is required, not the regular password; run `docker compose up -d --force-recreate` after changing `.env`, since `restart` doesn't reload environment variables |
-| A blocked user still sees the old menu | Telegram's reply keyboard doesn't refresh on its own — a new message with a new `reply_markup` must be sent (implemented in `bot/handlers/start.py`) |
-| A broadcast didn't go out even though `celery-beat` ran | For a one-time broadcast, check that `scheduled_at` is actually filled in — without it `is_due()` is always `False`. Or use the "Send now" action |
-| The emoji picker doesn't show up in the admin | Usually stale static files: run `docker compose exec web python manage.py collectstatic --noinput`, then hard-refresh the browser |
-| Email buttons link to `localhost` instead of the real site | `SITE_BASE_URL` in `.env` isn't set or points to the wrong domain |
-| GitHub Actions doesn't trigger on push | Check the branch name in `on: push: branches: [...]` in `ci.yml` — it must match your working branch (`main`, `develop`, etc.); also check `Settings → Actions → General → Actions permissions` |
+| Symptom | Cause and fix |
+| --- | --- |
+| CI: `ImportError` / `cannot import name` | A new file was not committed. `git status`, then `git add` the untracked files |
+| CI: `makemigrations --check` fails | Model changed without a migration — run `makemigrations` and commit the result |
+| Bot silent, no **Apolo** menu button | `bot` service not running: check its start command and logs |
+| `TelegramConflictError` | The same `BOT_TOKEN` runs in two places — stop the other instance |
+| Broadcasts or reminders arrive twice | Two schedulers: `celery-all` together with `celerybeat`, or more than one `celerybeat` replica |
+| Mini App says "Open in Telegram" | Opened outside Telegram, or `BOT_TOKEN` on `web` differs from the bot's |
+| `/app/` shows "Mini App не зібрано" | The frontend build stage failed — check the `web` build log |
+| No emails | The project or department has no **To** recipient; `RESEND_API_KEY` missing on `worker`; or the sender domain is not verified in Resend |
+| A bot button spins and nothing happens | An error in the handler — check the `bot` logs (and Sentry) at the moment of the click |
+| A blocked user still sees the full menu | Telegram keeps the old keyboard until the next message — the user should send `/start` |
+| Admin has no styles, or the emoji picker is missing | Static files not collected — redeploy `web` (it runs `collectstatic`), then hard-refresh the browser |
+| `WORKER TIMEOUT` in `web` logs | A request took over 60 s — usually a very large upload on a slow connection; check the `--timeout` in `entrypoint.sh` |
+| CI does not start on push | The branch is not listed under `on: push: branches` in `ci.yml`, or Actions are disabled in repository settings |
+| Email buttons point to `localhost` | `SITE_BASE_URL` not set |
+| `DisallowedHost` / CSRF 403 in admin | Domain missing from `DJANGO_ALLOWED_HOSTS` / `CSRF_TRUSTED_ORIGINS` |
+| Custom domain has no green check | CNAME wrong or Cloudflare proxy enabled — switch to **DNS only** |
+| A one-off broadcast never went out | `Scheduled at` is empty — fill it in or use **Send now** |
 
 ## Roadmap
 
-- `RedisStorage` for FSM instead of `MemoryStorage` (needed for multiple bot replicas)
-- Pagination for the request list in the coordinator panel (currently capped at 30 records)
-- Rate-limiting / anti-flood middleware for aiogram
-- Bulk Telegram ID import (e.g. from CSV) for quickly seeding the initial user list
-- Per-language broadcast text (a different message body per recipient's language)
-- Continuous Deployment (automatic deploy to the server after a successful CI run)
+- **Keep bot dialogs across restarts:** move the aiogram FSM from memory to Redis. Today an unfinished dialog in the classic bot menu is lost on every restart — which on Railway means every push.
+- **Check project membership on bot decision buttons**, as the Mini App API already does. Today the buttons only reach the project's coordinators, but the handler itself checks just the Staff flag.
+- **Pagination** in the coordinator panel (the bot shows the latest 30 requests, the app the latest 100).
+- **Anti-flood** middleware for the bot.
+- **Broadcasts in the recipient's language.**

@@ -139,7 +139,9 @@ CELERY_BEAT_SCHEDULE = {
 # Нагадування про неприкріплений лікарняний: через скільки днів після подання,
 # з яким інтервалом і скільки разів максимум
 SICK_NOTE_REMINDER_AFTER_DAYS = int(os.getenv("SICK_NOTE_REMINDER_AFTER_DAYS", "2"))
-SICK_NOTE_REMINDER_INTERVAL_DAYS = int(os.getenv("SICK_NOTE_REMINDER_INTERVAL_DAYS", "2"))
+SICK_NOTE_REMINDER_INTERVAL_DAYS = int(
+    os.getenv("SICK_NOTE_REMINDER_INTERVAL_DAYS", "2")
+)
 SICK_NOTE_REMINDER_MAX = int(os.getenv("SICK_NOTE_REMINDER_MAX", "3"))
 
 # Скільки днів зберігати файли лікарняних після відправки координатору
@@ -181,4 +183,3 @@ if SENTRY_DSN:
     )
     # Railway сам задає назву сервісу — у Sentry видно, де сталася помилка: web, bot чи worker
     sentry_sdk.set_tag("service", os.getenv("RAILWAY_SERVICE_NAME", "local"))
-
