@@ -61,6 +61,8 @@ export function apiErrorText(t, lang, error) {
       return t('err_already_decided')
     case 'l4_cannot_reject':
       return t('l4NoReject')
+    case 'not_cancellable':
+      return t('err_not_cancellable')
     case 'file_type':
       return t('err_file_type', { name: detail.name })
     case 'file_too_large':

@@ -2,6 +2,7 @@ import { api } from '../api'
 import { DateChips, EmptyState, LoadError, Loading, Row, Screen, Section, StatusChip, TypeIcon } from '../components/ui'
 import { useApp, useLoad, useScreenState } from '../context'
 import { formatDay } from '../i18n'
+import { CancelButton } from '../components/CancelButton'
 import { requestSummary } from './Home'
 
 export function MyRequests() {
@@ -63,6 +64,7 @@ export function MyRequests() {
                     <span className="request-meta">
                       {t('submittedOn', { date: formatDay(lang, item.created_at) })}
                     </span>
+                    <CancelButton item={item} onCancelled={reload} />
                   </div>
                 )}
               </div>

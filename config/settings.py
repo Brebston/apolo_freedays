@@ -130,7 +130,17 @@ CELERY_BEAT_SCHEDULE = {
         "task": "core.tasks.purge_old_sick_leave_files",
         "schedule": crontab(hour=3, minute=30),
     },
+    "remind-missing-sick-notes": {
+        "task": "api.tasks.remind_missing_sick_notes",
+        "schedule": crontab(hour=10, minute=0),
+    },
 }
+
+# Нагадування про неприкріплений лікарняний: через скільки днів після подання,
+# з яким інтервалом і скільки разів максимум
+SICK_NOTE_REMINDER_AFTER_DAYS = int(os.getenv("SICK_NOTE_REMINDER_AFTER_DAYS", "2"))
+SICK_NOTE_REMINDER_INTERVAL_DAYS = int(os.getenv("SICK_NOTE_REMINDER_INTERVAL_DAYS", "2"))
+SICK_NOTE_REMINDER_MAX = int(os.getenv("SICK_NOTE_REMINDER_MAX", "3"))
 
 # Скільки днів зберігати файли лікарняних після відправки координатору
 SICK_LEAVE_FILE_RETENTION_DAYS = int(os.getenv("SICK_LEAVE_FILE_RETENTION_DAYS", "90"))
@@ -149,3 +159,26 @@ DEFAULT_FROM_EMAIL = os.getenv(
 )
 
 SITE_BASE_URL = os.getenv("SITE_BASE_URL", "http://localhost:8000")
+
+
+# ---------------------------------------------------------------------------
+# Моніторинг помилок (Sentry). Вмикається лише якщо задано SENTRY_DSN.
+# ---------------------------------------------------------------------------
+SENTRY_DSN = os.getenv("SENTRY_DSN", "")
+if SENTRY_DSN:
+    import sentry_sdk
+    from sentry_sdk.integrations.celery import CeleryIntegration
+    from sentry_sdk.integrations.django import DjangoIntegration
+
+    sentry_sdk.init(
+        dsn=SENTRY_DSN,
+        integrations=[DjangoIntegration(), CeleryIntegration()],
+        environment=os.getenv("SENTRY_ENVIRONMENT", "production"),
+        # Лікарняні — медичні дані: не надсилаємо ні персональних даних, ні тіл запитів
+        send_default_pii=False,
+        max_request_body_size="never",
+        traces_sample_rate=0.0,
+    )
+    # Railway сам задає назву сервісу — у Sentry видно, де сталася помилка: web, bot чи worker
+    sentry_sdk.set_tag("service", os.getenv("RAILWAY_SERVICE_NAME", "local"))
+

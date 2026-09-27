@@ -3,7 +3,7 @@ from datetime import date
 from asgiref.sync import sync_to_async
 from django.utils import timezone
 
-from core.models import AbsenceRequest, Project, Region, RequestStatus, RequestType
+from core.models import AbsenceRequest, Project, Region, RequestStatus, RequestType, INACTIVE_STATUSES
 from users.models import User
 
 # ---------------------------------------------------------------------------
@@ -151,7 +151,7 @@ def get_used_dayoff_days_in_month(
     """
     qs = AbsenceRequest.objects.filter(
         user_id=user_id, project_id=project_id, request_type=RequestType.DAYOFF
-    ).exclude(status=RequestStatus.REJECTED)
+    ).exclude(status__in=INACTIVE_STATUSES)
     if exclude_request_id:
         qs = qs.exclude(id=exclude_request_id)
 
@@ -179,7 +179,7 @@ def get_workers_count_on_date(project_id: int, iso_date: str) -> int:
     """
     qs = AbsenceRequest.objects.filter(
         project_id=project_id, request_type=RequestType.DAYOFF
-    ).exclude(status=RequestStatus.REJECTED)
+    ).exclude(status__in=INACTIVE_STATUSES)
     user_ids = set()
     for req in qs.only("dates", "start_date", "end_date", "user_id"):
         dates = req.dates or []

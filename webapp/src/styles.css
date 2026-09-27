@@ -949,3 +949,78 @@ a {
 .sent .btn-secondary {
   margin-top: -8px;
 }
+
+/* ---------- Скасування і залишок вихідних ---------- */
+
+.chip-cancelled {
+  color: var(--hint);
+  background: rgba(133, 139, 149, 0.16);
+}
+
+.btn-cancel {
+  margin-top: 4px;
+}
+
+.request-details .btn-cancel {
+  width: auto;
+  align-self: flex-start;
+  min-height: 38px;
+  padding: 0 14px;
+  background: var(--page);
+  font-size: 15px;
+}
+
+.balance-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px var(--gutter);
+  position: relative;
+}
+
+.balance-row + .balance-row::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: var(--gutter);
+  right: 0;
+  height: 1px;
+  background: var(--separator);
+  transform: scaleY(0.5);
+}
+
+.balance-text {
+  display: flex;
+  flex-direction: column;
+}
+
+.balance-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.balance-pips .pip {
+  width: 11px;
+  height: 11px;
+}
+
+.balance-pips .pip-used {
+  background: var(--accent);
+  border-color: var(--accent);
+  opacity: 1;
+}
+
+.balance-left {
+  font-size: 14px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--approved);
+  color: color-mix(in srgb, var(--approved) 72%, var(--text));
+}
+
+.balance-left.is-empty {
+  color: var(--hint);
+}

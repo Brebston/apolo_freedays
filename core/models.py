@@ -129,6 +129,11 @@ class RequestStatus(models.TextChoices):
     PENDING = "pending", "Pending"
     APPROVED = "approved", "Approved"
     REJECTED = "rejected", "Rejected"
+    CANCELLED = "cancelled", "Cancelled"
+
+
+# Заявки з цими статусами не займають ліміти вихідних і місця на дату
+INACTIVE_STATUSES = (RequestStatus.REJECTED, RequestStatus.CANCELLED)
 
 
 class AbsenceRequest(models.Model):
@@ -173,6 +178,13 @@ class AbsenceRequest(models.Model):
     notified_coordinator_message_ids = models.JSONField(default=dict, blank=True)
     dates = models.JSONField(
         default=list, blank=True, verbose_name="Selected dates (ISO)"
+    )
+    cancelled_at = models.DateTimeField(null=True, blank=True, verbose_name="Cancelled by worker")
+    sick_note_reminders_sent = models.PositiveSmallIntegerField(
+        default=0, verbose_name="Sick note reminders sent"
+    )
+    sick_note_last_reminded_at = models.DateTimeField(
+        null=True, blank=True, verbose_name="Last sick note reminder"
     )
 
     class Meta:
@@ -410,6 +422,7 @@ class ServiceRequest(models.Model):
     )
     created_at = models.DateTimeField(auto_now_add=True)
     decided_at = models.DateTimeField(null=True, blank=True)
+    cancelled_at = models.DateTimeField(null=True, blank=True, verbose_name="Cancelled by worker")
 
     class Meta:
         verbose_name = "Reporting to Administration/Accounting"
@@ -451,3 +464,4 @@ class SickLeaveDocument(models.Model):
 
     def __str__(self):
         return f"{self.filename} ({self.request})"
+
